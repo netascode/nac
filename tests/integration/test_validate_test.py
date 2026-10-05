@@ -63,6 +63,11 @@ def test_validate_real_tool(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="nac-test is not installable on Windows: its scrapli-netconf -> "
+    "scrapli dependency ships no Windows wheel and the sdist build fails",
+)
 def test_test_real_tool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`nac test` runs the real `uvx nac-test` against the fixture
     data/templates and exits 0."""
