@@ -12,6 +12,7 @@ require network access, so they are excluded from the default run via the
 """
 
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -62,9 +63,14 @@ def test_validate_real_tool(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_test_real_tool(tmp_path: Path) -> None:
+def test_test_real_tool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`nac test` runs the real `uvx nac-test` against the fixture
     data/templates and exits 0."""
+    if sys.platform == "darwin" and sys.version_info < (3, 12):
+        # nac-test refuses to run on macOS with Python < 3.12, and uvx would
+        # otherwise pick up the interpreter running this test.
+        monkeypatch.setenv("UV_PYTHON", "3.12")
+
     cfg_path = _make_config(tmp_path)
 
     runner = CliRunner()
