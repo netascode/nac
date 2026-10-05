@@ -1,0 +1,5 @@
+test:
+  output: ./tests/results/aci
+
+env:
+  required: [ACI_URL, ACI_USERNAME, ACI_PASSWORD]

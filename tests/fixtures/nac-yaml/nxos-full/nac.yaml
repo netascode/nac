@@ -1,0 +1,28 @@
+working_dir: .
+
+data:
+  paths: [data/]
+  defaults: null
+
+render:
+  target: module.nxos.local_sensitive_file.model
+  output: model.yaml
+
+validate:
+  schema: .schema.yaml
+  rules: [.rules]
+
+test:
+  templates: tests/templates
+  filters: tests/filters
+  output: tests/results
+
+tools:
+  terraform:
+    engine: tofu
+    version: "1.9.5"
+  nac_validate: ">=0.9,<1.0"
+  nac_test: ">=2.0,<3.0"
+
+env:
+  required: [NXOS_USERNAME, NXOS_PASSWORD]

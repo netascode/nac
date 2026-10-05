@@ -1,0 +1,5 @@
+render:
+  output: model.yaml
+
+env:
+  required: [IOSXE_USERNAME, IOSXE_PASSWORD]

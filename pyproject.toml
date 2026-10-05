@@ -1,0 +1,105 @@
+[project]
+name = "nac-cli"
+version = "0.1.0"
+description = "An umbrella CLI wrapping terraform/tofu, nac-validate, and nac-test for Network-as-Code workflows."
+license = { text = "MPL-2.0" }
+readme = "README.md"
+authors = [
+    { name = "Daniel Schmidt", email = "danischm@cisco.com" },
+]
+maintainers = [
+    { name = "Daniel Schmidt", email = "danischm@cisco.com" },
+]
+requires-python = ">=3.10"
+keywords = ["terraform", "opentofu", "automation", "cli", "nac", "network-as-code"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Software Development :: Build Tools",
+]
+dependencies = [
+    "typer>=0.25.1",
+    "pydantic>=2.9",
+    "ruamel.yaml>=0.19.1",
+    "httpx>=0.28",
+    "platformdirs>=4.3",
+    "packaging>=24",
+]
+
+[project.urls]
+homepage = "https://github.com/netascode/nac"
+repository = "https://github.com/netascode/nac"
+documentation = "https://github.com/netascode/nac"
+
+[project.scripts]
+nac = "nac.cli.main:app"
+
+[project.optional-dependencies]
+dev = [
+    "bandit[toml]>=1.9.1",
+    "pre-commit>=4.4.0",
+    "pytest>=9.0.1",
+    "pytest-cov>=7.0.0",
+    "pytest-mock>=3.15.1",
+    "ruff>=0.14.5",
+    "ty>=0.0.78",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nac"]
+
+[tool.coverage.run]
+source = ["nac"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "@abstract", "except ImportError:"]
+omit = ["*/__main__.py"]
+
+[tool.pytest.ini_options]
+markers = ["unit", "integration"]
+
+[tool.ty.environment]
+python-version = "3.10"
+
+[tool.ty.rules]
+"all" = "error"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["nac"]
+
+[tool.bandit]
+exclude_dirs = ["tests"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
