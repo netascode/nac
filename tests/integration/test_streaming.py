@@ -128,17 +128,19 @@ def test_init_plan_apply_streams_output_in_real_time(tmp_path: Path) -> None:
     assert line_timestamps, "expected at least one line of streamed apply output"
 
     t_first = line_timestamps[0]
-    first_line_latency = t_first - t_start
     total_duration = t_end - t_start
 
     # The first line of output (e.g. "Initializing..."/plan header) should
-    # arrive quickly -- well before the 3s time_sleep resource completes --
-    # proving output is streamed incrementally rather than buffered until
-    # the process exits. This mirrors SPEC.md's own validated prototype
-    # (~0.12s for the first line against a 3s resource).
-    assert first_line_latency < SLEEP_DURATION_S / 2, (
-        f"first streamed line arrived after {first_line_latency:.2f}s, "
-        f"expected well under {SLEEP_DURATION_S / 2:.2f}s"
+    # arrive well before the process exits (the 3s time_sleep resource is
+    # still running), proving output is streamed incrementally rather than
+    # buffered until exit. Measured relative to process exit rather than to
+    # launch so slow interpreter/engine startup (e.g. Windows CI runners,
+    # where it can exceed 1.5s) can't cause false failures; if output were
+    # buffered, every line would arrive at ~t_end and this gap would be ~0.
+    first_line_lead = t_end - t_first
+    assert first_line_lead > SLEEP_DURATION_S / 2, (
+        f"first streamed line arrived only {first_line_lead:.2f}s before the process "
+        f"exited, expected more than {SLEEP_DURATION_S / 2:.2f}s"
     )
 
     # The overall apply should take roughly as long as the time_sleep
