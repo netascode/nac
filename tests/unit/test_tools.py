@@ -14,6 +14,7 @@ from nac.config import (
     ToolsConfig,
     ValidateConfig,
 )
+from nac.manifest import Manifest
 from nac.tools import (
     ToolSource,
     _local_tool_version,
@@ -23,7 +24,9 @@ from nac.tools import (
     build_prewarm_argv,
     build_test_argv,
     build_validate_argv,
+    exact_pin,
     resolve_tool_source,
+    tool_constraint,
 )
 
 
@@ -278,13 +281,21 @@ class TestBuildTestArgv:
         assert argv[d_indices[0] + 1] == "data/"
         assert argv[d_indices[1] + 1] == "defaults.yaml"
 
-    def test_templates_flag_always_present(self):
-        cfg = make_config(test=TestConfig())
+    def test_templates_flag_present_when_set(self):
+        cfg = make_config(test=TestConfig(templates="tests/templates"))
 
         argv = build_test_argv(cfg)
 
         idx = argv.index("-t")
         assert argv[idx + 1] == "tests/templates"
+
+    def test_templates_flag_omitted_when_none(self):
+        # nac-test then looks for templates in a module or bundle
+        cfg = make_config(test=TestConfig(templates=None))
+
+        argv = build_test_argv(cfg)
+
+        assert "-t" not in argv
 
     def test_filters_flag_omitted_when_none(self):
         cfg = make_config(test=TestConfig(filters=None))
@@ -406,3 +417,78 @@ class TestBuildHelpArgv:
         argv = build_help_argv("nac-test", "1.2.3")
 
         assert argv == ["/usr/bin/nac-test", "--help"]
+
+
+MANIFEST = Manifest(
+    module="netascode/nac-nxos/nxos 0.3.0",
+    tools={"nac-validate": "2.0.0", "nac-test": "0.9.1"},
+)
+
+
+@pytest.mark.unit
+class TestToolConstraint:
+    def test_explicit_constraint_wins_over_manifest(self):
+        assert tool_constraint("nac-validate", "1.2.0", MANIFEST) == "1.2.0"
+
+    def test_defaults_to_latest_compatible_with_tested_version(self):
+        assert tool_constraint("nac-validate", None, MANIFEST) == ">=2.0.0,<3"
+
+    def test_zero_major_tested_version_stays_within_minor(self):
+        assert tool_constraint("nac-test", None, MANIFEST) == ">=0.9.1,<0.10"
+
+    def test_no_manifest_means_unconstrained(self):
+        assert tool_constraint("nac-validate", None, None) is None
+
+    def test_tool_missing_from_manifest_is_unconstrained(self):
+        manifest = Manifest(module="m", tools={})
+
+        assert tool_constraint("nac-validate", None, manifest) is None
+
+
+@pytest.mark.unit
+class TestExactPin:
+    @pytest.mark.parametrize("constraint", ["1.2.0", "==1.2.0", " 1.2.0 "])
+    def test_exact_versions(self, constraint):
+        assert exact_pin(constraint) == "1.2.0"
+
+    @pytest.mark.parametrize(
+        "constraint", [">=1.0", ">=1.0,<2", "==1.*", "~=1.2", "not-a-version"]
+    )
+    def test_ranges_and_invalid_return_none(self, constraint):
+        assert exact_pin(constraint) is None
+
+
+@pytest.mark.unit
+class TestManifestDefaultInArgv:
+    def test_validate_uses_latest_compatible_via_uvx(self):
+        argv = build_validate_argv(make_config(), MANIFEST)
+
+        assert argv[:4] == ["uvx", "--from", "nac-validate>=2.0.0,<3", "nac-validate"]
+
+    def test_test_uses_latest_compatible_via_uvx(self):
+        argv = build_test_argv(make_config(), MANIFEST)
+
+        assert argv[:4] == ["uvx", "--from", "nac-test>=0.9.1,<0.10", "nac-test"]
+
+    def test_explicit_tool_version_overrides_manifest(self):
+        cfg = make_config(tools=ToolsConfig(nac_validate="1.2.0"))
+
+        argv = build_validate_argv(cfg, MANIFEST)
+
+        assert argv[:4] == ["uvx", "--from", "nac-validate==1.2.0", "nac-validate"]
+
+    def test_local_install_outside_compatible_range_falls_back_to_uvx(self, mocker):
+        mocker.patch("nac.tools.shutil.which", return_value="/usr/bin/nac-validate")
+        mocker.patch("nac.tools._local_tool_version", return_value="1.2.0")
+
+        argv = build_validate_argv(make_config(), MANIFEST)
+
+        assert argv[:3] == ["uvx", "--from", "nac-validate>=2.0.0,<3"]
+
+    def test_local_install_inside_compatible_range_is_used(self, mocker):
+        mocker.patch("nac.tools.shutil.which", return_value="/usr/bin/nac-validate")
+        mocker.patch("nac.tools._local_tool_version", return_value="2.4.0")
+
+        argv = build_validate_argv(make_config(), MANIFEST)
+
+        assert argv[0] == "/usr/bin/nac-validate"

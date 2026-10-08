@@ -62,6 +62,7 @@ def apply(
         cwd=cfg.working_dir,
         env=env,
         log_path=cfg.working_dir / "apply.txt" if artifacts else None,
+        no_color=no_color,
     )
     if used_plan_file and code == 0:
         plan_file.unlink()

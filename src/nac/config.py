@@ -57,7 +57,7 @@ class TestConfig(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    templates: str = "tests/templates"
+    templates: str | None = None
     filters: str | None = None
     output: str = "tests/results"
 
@@ -144,6 +144,8 @@ def _apply_filesystem_defaults(cfg: NacConfig, config_path: Path) -> NacConfig:
         data = data.model_copy(update={"defaults": "defaults.yaml"})
 
     test = cfg.test
+    if test.templates is None and (working_dir_abs / "tests" / "templates").is_dir():
+        test = test.model_copy(update={"templates": "tests/templates"})
     if test.filters is None and (working_dir_abs / "tests" / "filters").is_dir():
         test = test.model_copy(update={"filters": "tests/filters"})
 

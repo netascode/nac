@@ -3,6 +3,7 @@
 
 """Unit tests for nac.runner."""
 
+import logging
 import os
 import sys
 import threading
@@ -24,6 +25,57 @@ def test_streams_stdout_and_returns_exit_code(tmp_path: Path, capsys):
 
     assert code == 0
     assert "hello" in capsys.readouterr().out
+
+
+@pytest.mark.unit
+def test_echoes_command_to_stderr_before_running(tmp_path: Path, capsys):
+    argv = _echo_argv("hello")
+
+    run_streaming(argv, cwd=tmp_path, env=dict(os.environ), no_color=True)
+
+    captured = capsys.readouterr()
+    assert captured.err.startswith("$ ")
+    assert sys.executable in captured.err
+    assert "$ " not in captured.out
+
+
+@pytest.mark.unit
+def test_echoes_command_even_when_quiet(tmp_path: Path, capsys):
+    run_streaming(
+        _echo_argv("hello"),
+        cwd=tmp_path,
+        env=dict(os.environ),
+        quiet=True,
+        no_color=True,
+    )
+
+    assert capsys.readouterr().err.startswith("$ ")
+
+
+@pytest.mark.unit
+def test_echoed_command_is_not_written_to_log_file(tmp_path: Path):
+    """Artifacts like plan.json must stay pure tool output."""
+    log_path = tmp_path / "out.log"
+
+    run_streaming(
+        _echo_argv("hello"), cwd=tmp_path, env=dict(os.environ), log_path=log_path
+    )
+
+    assert log_path.read_text().strip() == "hello"
+
+
+@pytest.mark.unit
+def test_env_overrides_are_logged_at_debug_only(tmp_path: Path, caplog, monkeypatch):
+    monkeypatch.delenv("NAC_TEST_OVERRIDE", raising=False)
+    env = {**os.environ, "NAC_TEST_OVERRIDE": "1"}
+
+    with caplog.at_level(logging.DEBUG, logger="nac.runner"):
+        run_streaming(_echo_argv("hello"), cwd=tmp_path, env=env)
+
+    records = [r for r in caplog.records if "NAC_TEST_OVERRIDE=1" in r.getMessage()]
+    assert len(records) == 1
+    assert records[0].levelno == logging.DEBUG
+    assert "PATH=" not in records[0].getMessage()
 
 
 @pytest.mark.unit

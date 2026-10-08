@@ -12,14 +12,18 @@ rather than this module re-reading the environment itself."""
 
 import os
 import re
+import shlex
+import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 import typer
 
 SEP_WIDTH = 80
 BOLD = "\033[1m"
 GREEN = "\033[92m"
+YELLOW = "\033[93m"
+DIM = "\033[2m"
 _RESET = "\033[0m"
 
 _ANSI_ESCAPE_RE = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
@@ -46,6 +50,25 @@ def echo_summary(title: str, lines: list[str], *, no_color: bool = False) -> Non
     for line in lines:
         typer.echo(f"  {color(GREEN, '✓', no_color=no_color)} {line}")
     typer.echo(f"{sep}\n")
+
+
+def format_command(argv: Sequence[str]) -> str:
+    """Render argv as a single copy-pasteable command line, quoted for the
+    current platform's shell (POSIX sh, or cmd.exe-style on Windows)."""
+    if sys.platform == "win32":
+        return subprocess.list2cmdline(argv)
+    return shlex.join(argv)
+
+
+def echo_command(argv: Sequence[str], *, no_color: bool = False) -> None:
+    """Print the exact command nac is about to run, as a dim `$ ...` line.
+
+    Goes to stderr so it never mixes into a wrapped tool's stdout when that
+    is piped or redirected. stdout is flushed first so the line still lands
+    in order relative to output nac has already written there.
+    """
+    sys.stdout.flush()
+    typer.echo(color(DIM, f"$ {format_command(argv)}", no_color=no_color), err=True)
 
 
 def utf8_env(base_env: Mapping[str, str]) -> dict[str, str]:

@@ -47,6 +47,7 @@ def plan(ctx: typer.Context, artifacts: Artifacts = False) -> None:
         terraform.build_plan_argv(binary, no_color=no_color) + ctx.args,
         cwd=cfg.working_dir,
         env=env,
+        no_color=no_color,
     )
     if code != 0:
         raise typer.Exit(code=code)
@@ -57,6 +58,7 @@ def plan(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             cwd=cfg.working_dir,
             env=env,
             log_path=cfg.working_dir / "plan.txt",
+            no_color=no_color,
         )
         if code != 0:
             raise typer.Exit(code=code)
@@ -66,6 +68,7 @@ def plan(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             cwd=cfg.working_dir,
             env=env,
             log_path=cfg.working_dir / "plan.json",
+            no_color=no_color,
         )
         if code != 0:
             raise typer.Exit(code=code)

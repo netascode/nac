@@ -49,6 +49,8 @@ def nac_yaml_fixture(name: str) -> Path:
         "nxos-full",
         "filters-present",
         "filters-absent",
+        "templates-present",
+        "templates-absent",
     ],
 )
 def test_load_config_valid_fixtures_parse(fixture_name: str) -> None:
@@ -178,6 +180,23 @@ def test_filesystem_defaults_detects_defaults_yaml_when_present() -> None:
 def test_filesystem_defaults_leaves_defaults_none_when_absent() -> None:
     cfg = load_config(nac_yaml_fixture("minimal"))
     assert cfg.data.defaults is None
+
+
+def test_filesystem_defaults_detects_test_templates_when_present() -> None:
+    cfg = load_config(nac_yaml_fixture("templates-present"))
+    assert cfg.test.templates == "tests/templates"
+
+
+def test_filesystem_defaults_leaves_test_templates_none_when_absent() -> None:
+    # Templates may come from a module or bundle instead (nac-test finds them)
+    cfg = load_config(nac_yaml_fixture("templates-absent"))
+    assert cfg.test.templates is None
+
+
+def test_explicit_test_templates_are_kept_even_if_missing(tmp_path: Path) -> None:
+    config = tmp_path / "nac.yaml"
+    config.write_text("test:\n  templates: custom/templates\n")
+    assert load_config(config).test.templates == "custom/templates"
 
 
 def test_filesystem_defaults_detects_test_filters_when_present() -> None:
@@ -325,7 +344,7 @@ def test_defaults_constructed_directly() -> None:
     assert cfg.tools.nac_test is None
     assert cfg.env.required == []
     assert cfg.working_dir == Path(".")
-    assert cfg.test.templates == "tests/templates"
+    assert cfg.test.templates is None
     assert cfg.test.filters is None
     assert cfg.test.output == "tests/results"
 

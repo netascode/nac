@@ -5,7 +5,16 @@
 
 import pytest
 
-from nac.output import GREEN, apply_no_color_env, color, echo_summary, strip_ansi
+from nac.output import (
+    DIM,
+    GREEN,
+    apply_no_color_env,
+    color,
+    echo_command,
+    echo_summary,
+    format_command,
+    strip_ansi,
+)
 
 
 @pytest.mark.unit
@@ -71,3 +80,40 @@ class TestApplyNoColorEnv:
         apply_no_color_env(True, base_env=base)
 
         assert "NO_COLOR" not in base
+
+
+@pytest.mark.unit
+class TestFormatCommand:
+    def test_posix_quotes_arguments_with_spaces(self, mocker):
+        mocker.patch("nac.output.sys.platform", "linux")
+
+        assert format_command(["tofu", "plan", "-var=a b"]) == "tofu plan '-var=a b'"
+
+    def test_windows_uses_cmd_quoting(self, mocker):
+        mocker.patch("nac.output.sys.platform", "win32")
+
+        assert format_command(["tofu.exe", "plan", "-var=a b"]) == (
+            'tofu.exe plan "-var=a b"'
+        )
+
+
+@pytest.mark.unit
+class TestEchoCommand:
+    def test_prints_dim_dollar_line_to_stderr(self, mocker):
+        echo = mocker.patch("nac.output.typer.echo")
+
+        echo_command(["tofu", "plan"])
+
+        echo.assert_called_once_with(color(DIM, "$ tofu plan"), err=True)
+
+    def test_nothing_goes_to_stdout(self, capsys):
+        echo_command(["tofu", "plan"])
+
+        captured = capsys.readouterr()
+        assert captured.out == ""
+        assert captured.err == "$ tofu plan\n"
+
+    def test_no_color_true_omits_ansi_codes(self, capsys):
+        echo_command(["tofu", "plan"], no_color=True)
+
+        assert capsys.readouterr().err == "$ tofu plan\n"

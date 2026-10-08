@@ -2,6 +2,7 @@
 # Copyright (c) 2026 Daniel Schmidt
 
 import codecs
+import logging
 import os
 import subprocess
 import sys
@@ -9,7 +10,9 @@ from contextlib import nullcontext
 from pathlib import Path
 from typing import cast
 
-from nac.output import strip_ansi, utf8_env
+from nac.output import echo_command, strip_ansi, utf8_env
+
+logger = logging.getLogger(__name__)
 
 _READ_SIZE = 4096
 
@@ -31,6 +34,15 @@ def _write_stdout(data: bytes) -> None:
     buffer.flush()
 
 
+def _log_env_overrides(env: dict[str, str]) -> None:
+    overrides = {k: v for k, v in env.items() if os.environ.get(k) != v}
+    if overrides:
+        logger.debug(
+            "Environment overrides: %s",
+            " ".join(f"{k}={v}" for k, v in sorted(overrides.items())),
+        )
+
+
 def run_streaming(
     cmd: list[str],
     cwd: Path,
@@ -38,6 +50,7 @@ def run_streaming(
     log_path: Path | None = None,
     quiet: bool = False,
     append: bool = False,
+    no_color: bool = False,
 ) -> int:
     """Run cmd as a subprocess, streaming merged stdout+stderr in real time.
 
@@ -67,7 +80,17 @@ def run_streaming(
     the same log_path (e.g. nac validate's render step followed by the
     nac-validate call itself), so both calls' output lands in one file in
     order. append has no effect when log_path is None.
+
+    The exact command line is always echoed first (to stderr, never to
+    log_path, so artifacts like plan.json stay pure tool output -- see
+    `echo_command`); the environment variables nac set or changed for the
+    child are logged at DEBUG, since they can affect behavior too (e.g. the
+    tenv version pin) but would be noise on every run.
     """
+    child_env = utf8_env(env)
+    echo_command(cmd, no_color=no_color)
+    _log_env_overrides(child_env)
+
     if log_path is not None:
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -83,7 +106,7 @@ def run_streaming(
         proc = subprocess.Popen(
             cmd,
             cwd=cwd,
-            env=utf8_env(env),
+            env=child_env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             stdin=None,

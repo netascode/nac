@@ -18,6 +18,7 @@ from .passthrough import (
     show_help_and_exit,
     wants_help,
 )
+from .versions import emit_warnings, get_manifest, note_on_failure, tool_warnings
 
 
 @app.command(
@@ -32,11 +33,13 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
     cfg = get_config(ctx)
     no_color = get_no_color(ctx)
     log_path = cfg.working_dir / "validate.txt" if artifacts else None
+    manifest = get_manifest(ctx, cfg)
+    constraint = tools.tool_constraint("nac-validate", cfg.tools.nac_validate, manifest)
 
     if wants_help(ctx):
         show_help_and_exit(
             ctx,
-            tools.build_help_argv("nac-validate", cfg.tools.nac_validate),
+            tools.build_help_argv("nac-validate", constraint),
             cwd=cfg.working_dir,
             env=apply_no_color_env(no_color),
             no_color=no_color,
@@ -44,7 +47,9 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             usage_as="nac validate",
         )
 
-    render_ran = False
+    warnings = tool_warnings(manifest, "nac-validate", cfg.tools.nac_validate)
+    log_written = emit_warnings(warnings, no_color=no_color, log_path=log_path)
+
     if cfg.render is not None and cfg.render.target is not None:
         engine, binary = resolve_engine_or_exit(cfg)
         env = terraform.build_engine_env(engine, cfg.tools.terraform.version)
@@ -57,8 +62,10 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             env=env,
             quiet=quiet,
             log_path=log_path,
+            append=log_written,
+            no_color=no_color,
         )
-        render_ran = True
+        log_written = True
         if code != 0:
             raise typer.Exit(code=code)
         if quiet:
@@ -72,10 +79,12 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             )
 
     code = runner.run_streaming(
-        tools.build_validate_argv(cfg) + ctx.args,
+        tools.build_validate_argv(cfg, manifest) + ctx.args,
         cwd=cfg.working_dir,
         env=apply_no_color_env(no_color),
         log_path=log_path,
-        append=render_ran,
+        append=log_written,
+        no_color=no_color,
     )
+    note_on_failure("validate", code, warnings, no_color=no_color, log_path=log_path)
     raise typer.Exit(code=code)

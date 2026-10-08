@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2026 Daniel Schmidt
 
+import logging
 import re
 import shutil
 import subprocess
@@ -11,6 +12,10 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from nac.config import NacConfig, resolve_test_data, resolve_validate_data
+from nac.manifest import Manifest, compatible_range
+from nac.output import format_command
+
+logger = logging.getLogger(__name__)
 
 _SPECIFIER_PREFIXES = ("==", "!=", ">=", "<=", "~=", ">", "<")
 _VERSION_RE = re.compile(r"\d+(?:\.\d+)+(?:[a-zA-Z0-9.\-+]*)?")
@@ -36,9 +41,11 @@ class ToolSource:
 
 
 def _local_tool_version(binary: str) -> str | None:
+    argv = [binary, "--version"]
+    logger.debug("Running %s", format_command(argv))
     try:
         result = subprocess.run(
-            [binary, "--version"],
+            argv,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -58,6 +65,37 @@ def _satisfies(version: str, constraint: str) -> bool:
         return spec.contains(Version(version), prereleases=True)
     except (InvalidSpecifier, InvalidVersion):
         return False
+
+
+def tool_constraint(
+    tool: Literal["nac-validate", "nac-test"],
+    explicit: str | None,
+    manifest: Manifest | None,
+) -> str | None:
+    """Version constraint to resolve `tool` with.
+
+    An explicit `tools.nac_validate`/`tools.nac_test` always wins. Otherwise,
+    if the module's manifest lists a tested version, default to the latest
+    semver-compatible release of it rather than the latest overall.
+    """
+    if explicit is not None:
+        return explicit
+    tested = manifest.tools.get(tool) if manifest is not None else None
+    return compatible_range(tested) if tested is not None else None
+
+
+def exact_pin(constraint: str) -> str | None:
+    """The single version `constraint` allows (`1.2.0`, `==1.2.0`), else None."""
+    try:
+        specs = list(SpecifierSet(_pin_suffix(constraint)))
+    except InvalidSpecifier:
+        return None
+    if len(specs) != 1:
+        return None
+    spec = specs[0]
+    if spec.operator not in ("==", "===") or "*" in spec.version:
+        return None
+    return spec.version
 
 
 def resolve_tool_source(
@@ -92,9 +130,10 @@ def _tool_prefix(
     return argv + [tool]
 
 
-def build_validate_argv(cfg: NacConfig) -> list[str]:
+def build_validate_argv(cfg: NacConfig, manifest: Manifest | None = None) -> list[str]:
     data = resolve_validate_data(cfg)
-    argv = _tool_prefix("nac-validate", cfg.tools.nac_validate)
+    constraint = tool_constraint("nac-validate", cfg.tools.nac_validate, manifest)
+    argv = _tool_prefix("nac-validate", constraint)
     argv += data
     if cfg.validate.schema is not None:
         argv += ["-s", cfg.validate.schema]
@@ -103,12 +142,14 @@ def build_validate_argv(cfg: NacConfig) -> list[str]:
     return argv
 
 
-def build_test_argv(cfg: NacConfig) -> list[str]:
+def build_test_argv(cfg: NacConfig, manifest: Manifest | None = None) -> list[str]:
     data = resolve_test_data(cfg)
-    argv = _tool_prefix("nac-test", cfg.tools.nac_test)
+    constraint = tool_constraint("nac-test", cfg.tools.nac_test, manifest)
+    argv = _tool_prefix("nac-test", constraint)
     for d in data:
         argv += ["-d", d]
-    argv += ["-t", cfg.test.templates]
+    if cfg.test.templates is not None:
+        argv += ["-t", cfg.test.templates]
     if cfg.test.filters is not None:
         argv += ["-f", cfg.test.filters]
     argv += ["-o", cfg.test.output]

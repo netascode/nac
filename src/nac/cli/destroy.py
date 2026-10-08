@@ -55,5 +55,6 @@ def destroy(
         cwd=cfg.working_dir,
         env=env,
         log_path=cfg.working_dir / "destroy.txt" if artifacts else None,
+        no_color=no_color,
     )
     raise typer.Exit(code=code)

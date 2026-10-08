@@ -3,6 +3,7 @@
 
 """`nac setup` -- verify prerequisites and report resolved tool versions."""
 
+import logging
 import os
 import shutil
 import subprocess
@@ -14,11 +15,15 @@ import typer
 
 from nac import bootstrap, runner, terraform, tools
 from nac.exceptions import BootstrapError, EngineNotFoundError, NoEngineAvailableError
-from nac.output import apply_no_color_env, echo_summary
+from nac.manifest import MANIFEST_FILE
+from nac.output import apply_no_color_env, echo_summary, format_command
 from nac.tools import ToolSource
 
 from .main import app, fail, get_config, get_no_color
 from .options import Prewarm, Yes
+from .versions import emit_warnings, get_manifest, tool_warnings
+
+logger = logging.getLogger(__name__)
 
 UV_NOT_FOUND = (
     "`uv` not found on PATH -- install it: "
@@ -52,8 +57,10 @@ def _confirm_bootstrap(yes: bool) -> bool:
 
 
 def _binary_version(binary: str, env: dict[str, str]) -> str:
+    argv = [binary, "version"]
+    logger.debug("Running %s", format_command(argv))
     result = subprocess.run(
-        [binary, "version"],
+        argv,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -111,6 +118,10 @@ def setup(ctx: typer.Context, yes: Yes = False, prewarm: Prewarm = False) -> Non
     env = terraform.build_engine_env(engine, cfg.tools.terraform.version)
     lines.append(f"{engine}: {_binary_version(binary, env)} ({detection})")
 
+    manifest = get_manifest(ctx, cfg)
+    if manifest is not None:
+        lines.append(f"tested versions: {manifest.module} ({MANIFEST_FILE})")
+
     missing_env = [name for name in cfg.env.required if name not in os.environ]
     if missing_env:
         fail("Missing required environment variable(s): " + ", ".join(missing_env))
@@ -118,35 +129,49 @@ def setup(ctx: typer.Context, yes: Yes = False, prewarm: Prewarm = False) -> Non
         lines.append("env.required: all present (" + ", ".join(cfg.env.required) + ")")
 
     def _tool_summary_line(
-        name: Literal["nac-validate", "nac-test"], constraint: str | None
-    ) -> tuple[str, ToolSource]:
+        name: Literal["nac-validate", "nac-test"], explicit: str | None
+    ) -> tuple[str, ToolSource, str | None]:
+        constraint = tools.tool_constraint(name, explicit, manifest)
         source = tools.resolve_tool_source(name, constraint)
         if source.mode == "local":
-            return f"{name}: v{source.version or 'unknown'} (local)", source
+            return f"{name}: v{source.version or 'unknown'} (local)", source, constraint
         pin = constraint or "latest/unpinned"
+        if explicit is None and constraint is not None and manifest is not None:
+            pin += f", latest compatible with {manifest.module}"
         suffix = (
             f" -- local v{source.version} does not satisfy" if source.version else ""
         )
-        return f"{name}: {pin} (uvx{suffix})", source
+        return f"{name}: {pin} (uvx{suffix})", source, constraint
 
-    validate_line, validate_source = _tool_summary_line(
+    validate_line, validate_source, validate_constraint = _tool_summary_line(
         "nac-validate", cfg.tools.nac_validate
     )
-    test_line, test_source = _tool_summary_line("nac-test", cfg.tools.nac_test)
+    test_line, test_source, test_constraint = _tool_summary_line(
+        "nac-test", cfg.tools.nac_test
+    )
     lines.append(validate_line)
     lines.append(test_line)
+    warnings = [
+        *tool_warnings(manifest, "nac-validate", cfg.tools.nac_validate),
+        *tool_warnings(manifest, "nac-test", cfg.tools.nac_test),
+    ]
 
     if prewarm:
         base_env = apply_no_color_env(no_color)
         if validate_source.mode != "local":
-            argv = tools.build_prewarm_argv("nac-validate", cfg.tools.nac_validate)
-            code = runner.run_streaming(argv, cwd=cfg.working_dir, env=base_env)
+            argv = tools.build_prewarm_argv("nac-validate", validate_constraint)
+            code = runner.run_streaming(
+                argv, cwd=cfg.working_dir, env=base_env, no_color=no_color
+            )
             if code != 0:
                 raise typer.Exit(code=code)
         if test_source.mode != "local":
-            argv = tools.build_prewarm_argv("nac-test", cfg.tools.nac_test)
-            code = runner.run_streaming(argv, cwd=cfg.working_dir, env=base_env)
+            argv = tools.build_prewarm_argv("nac-test", test_constraint)
+            code = runner.run_streaming(
+                argv, cwd=cfg.working_dir, env=base_env, no_color=no_color
+            )
             if code != 0:
                 raise typer.Exit(code=code)
 
     echo_summary("Setup Summary", lines, no_color=no_color)
+    emit_warnings(warnings, no_color=no_color)

@@ -16,6 +16,7 @@ from .passthrough import (
     show_help_and_exit,
     wants_help,
 )
+from .versions import emit_warnings, get_manifest, note_on_failure, tool_warnings
 
 
 @app.command(
@@ -30,11 +31,16 @@ def test_(ctx: typer.Context, artifacts: Artifacts = False) -> None:
     """
     cfg = get_config(ctx)
     no_color = get_no_color(ctx)
+    log_path = cfg.working_dir / "test.txt" if artifacts else None
+    manifest = get_manifest(ctx, cfg)
 
     if wants_help(ctx):
         show_help_and_exit(
             ctx,
-            tools.build_help_argv("nac-test", cfg.tools.nac_test),
+            tools.build_help_argv(
+                "nac-test",
+                tools.tool_constraint("nac-test", cfg.tools.nac_test, manifest),
+            ),
             cwd=cfg.working_dir,
             env=apply_no_color_env(no_color),
             no_color=no_color,
@@ -42,10 +48,16 @@ def test_(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             usage_as="nac test",
         )
 
+    warnings = tool_warnings(manifest, "nac-test", cfg.tools.nac_test)
+    log_written = emit_warnings(warnings, no_color=no_color, log_path=log_path)
+
     code = runner.run_streaming(
-        tools.build_test_argv(cfg) + ctx.args,
+        tools.build_test_argv(cfg, manifest) + ctx.args,
         cwd=cfg.working_dir,
         env=apply_no_color_env(no_color),
-        log_path=cfg.working_dir / "test.txt" if artifacts else None,
+        log_path=log_path,
+        append=log_written,
+        no_color=no_color,
     )
+    note_on_failure("test", code, warnings, no_color=no_color, log_path=log_path)
     raise typer.Exit(code=code)

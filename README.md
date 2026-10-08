@@ -111,7 +111,9 @@ CI and local use. Checks `uv` is on `PATH`; checks `tenv` only if
 (explicit `tools.terraform.engine`, or auto-detected: `tofu` then
 `terraform`); checks every `env.required` variable is set (never prints
 values); reports resolved `terraform`/`tofu`, `nac-validate`, and `nac-test`
-versions. Fails fast with a non-zero exit on any missing prerequisite.
+versions, and warns if `nac-validate`/`nac-test` are outside the module's
+[tested versions](#tested-versions). Fails fast with a non-zero exit on any
+missing prerequisite (tested-versions warnings never fail it).
 
 | Flag | Description |
 |---|---|
@@ -208,13 +210,13 @@ configured):
 | `render.output` | unset | Rendered file path, e.g. `model.yaml`; required if `render.target` is set. |
 | `validate.schema` | unset → flag omitted | Passed to `nac-validate -s`; omitted lets `nac-validate` use its own default. |
 | `validate.rules` | unset → flag omitted | Passed to `nac-validate -r`; omitted lets `nac-validate` use its own default. |
-| `test.templates` | `tests/templates` | Passed to `nac-test -t`. |
+| `test.templates` | `tests/templates` if that directory exists in `working_dir`, else unset → flag omitted | Passed to `nac-test -t`; if omitted, `nac-test` uses templates provided by a module or bundle. |
 | `test.filters` | `tests/filters` if that directory exists in `working_dir`, else unset | Passed to `nac-test -f`. |
 | `test.output` | `tests/results` | Passed to `nac-test -o`. |
 | `tools.terraform.engine` | auto-detected: `tofu` if on `PATH`, else `terraform` | Explicit value always wins over detection. |
 | `tools.terraform.version` | unset | Only set if you need `tenv` to pin/install a specific version. |
-| `tools.nac_validate` | unset (any local install, else latest via `uvx`) | Version/spec a local install must satisfy, else passed to `uvx --from nac-validate<spec>`; e.g. `1.2.0` or `>=0.9,<1.0`. |
-| `tools.nac_test` | unset (any local install, else latest via `uvx`) | Version/spec a local install must satisfy, else passed to `uvx --from nac-test<spec>`; e.g. `2.0.0` or `>=2.0,<3.0`. |
+| `tools.nac_validate` | unset (latest compatible with the module's [tested version](#tested-versions); without a manifest: any local install, else latest via `uvx`) | Version/spec a local install must satisfy, else passed to `uvx --from nac-validate<spec>`; e.g. `1.2.0` or `>=0.9,<1.0`. |
+| `tools.nac_test` | unset (latest compatible with the module's [tested version](#tested-versions); without a manifest: any local install, else latest via `uvx`) | Version/spec a local install must satisfy, else passed to `uvx --from nac-test<spec>`; e.g. `2.0.0` or `>=2.0,<3.0`. |
 | `env.required` | `[]` | Variable names `nac setup` checks are present (values are never printed). |
 
 **Worked examples.** Lean NX-OS (render + validate + test all use the
@@ -292,8 +294,51 @@ env:
   `terraform`/`tofu` above. Otherwise falls back to `uvx`
   (`uv tool run`) -- `uvx --from nac-validate==<version> nac-validate ...`.
   Omit `tools.nac_validate`/`tools.nac_test` to let `uvx` resolve the latest
-  published release when no usable local install exists. `nac setup` reports
-  which source (`local` or `uvx`) each tool actually resolved to.
+  published release when no usable local install exists -- or, if the
+  module ships a [manifest](#tested-versions), the latest release compatible
+  with the tested one. `nac setup` reports which source (`local` or `uvx`)
+  each tool actually resolved to.
+
+## Tested versions
+
+A Network-as-Code Terraform module can ship a `nac/manifest.yaml` --
+alongside its other nac-specific content (schema, rules, test templates) --
+listing the `nac-validate`/`nac-test` versions it was tested with:
+
+```yaml
+schema: 1
+tools:
+  nac-validate: "2.0.0"
+  nac-test: "2.0.0"
+```
+
+`terraform`/`tofu` and provider versions don't belong here: the module's
+`versions.tf` (`required_version`, `required_providers`) already constrains
+them, and Terraform enforces that itself.
+
+After `nac init` has downloaded the module, `nac` finds the manifest via
+`.terraform/modules/modules.json` (the shallowest module that ships one,
+so a local wrapper around the module works too). It is purely a hint --
+nothing is ever enforced, and without a manifest (e.g. before the first
+`init`) nothing changes:
+
+- **Defaults:** with `tools.nac_validate`/`tools.nac_test` unset,
+  `nac-validate`/`nac-test` resolve to the latest release compatible with
+  the tested version instead of the latest overall -- a local install is
+  used if it's in that range, otherwise `uvx` fetches it.
+- **Warnings:** an explicit `tools.nac_validate`/`tools.nac_test` value
+  always wins, but if it resolves to a version outside the tested,
+  semver-compatible range, `nac validate`/`nac test` (and `nac setup`)
+  print a warning (to stderr, and into the `--artifacts` file), plus a
+  short note after the output if the command then fails. Exit codes are
+  never changed. A range resolved through `uvx` (e.g. `>=1.0`) isn't
+  checked, since the version `uvx` picks isn't known up front; an exact pin
+  or a local install is.
+
+"Compatible" means the tested version or newer, up to the next major --
+or the next minor for `0.x` versions, where a minor bump may be breaking.
+A tested `2.0.0` allows `>=2.0.0,<3`, a tested `0.13.1` allows
+`>=0.13.1,<0.14`. Newer-but-compatible versions are only logged at `INFO`.
 
 ## License
 

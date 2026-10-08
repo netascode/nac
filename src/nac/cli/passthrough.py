@@ -5,6 +5,7 @@
 delegating `--help`/`-h` to that tool's own help output.
 """
 
+import logging
 import re
 import shutil
 import subprocess
@@ -14,7 +15,9 @@ from typing import NoReturn
 
 import typer
 
-from nac.output import BOLD, color, utf8_env
+from nac.output import BOLD, color, format_command, utf8_env
+
+logger = logging.getLogger(__name__)
 
 # `options_metavar` replaces the bare `[OPTIONS]` in nac's own usage line so it
 # is clear that unrecognised arguments are forwarded to the wrapped tool.
@@ -93,6 +96,7 @@ def show_help_and_exit(
         if not no_color:
             child_env["FORCE_COLOR"] = "1"
 
+    logger.debug("Running %s", format_command(tool_argv))
     proc = subprocess.run(
         tool_argv,
         cwd=cwd,

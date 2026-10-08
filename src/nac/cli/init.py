@@ -29,6 +29,7 @@ def init(ctx: typer.Context, artifacts: Artifacts = False) -> None:
     cfg = get_config(ctx)
     engine, binary = resolve_engine_or_exit(cfg)
     env = terraform.build_engine_env(engine, cfg.tools.terraform.version)
+    no_color = get_no_color(ctx)
 
     if wants_help(ctx):
         show_help_and_exit(
@@ -36,15 +37,16 @@ def init(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             [binary, "init", "--help"],
             cwd=cfg.working_dir,
             env=env,
-            no_color=get_no_color(ctx),
+            no_color=no_color,
             tool_label=f"{engine} init",
             usage_as="nac init",
         )
 
     code = runner.run_streaming(
-        terraform.build_init_argv(binary, no_color=get_no_color(ctx)) + ctx.args,
+        terraform.build_init_argv(binary, no_color=no_color) + ctx.args,
         cwd=cfg.working_dir,
         env=env,
         log_path=cfg.working_dir / "init.txt" if artifacts else None,
+        no_color=no_color,
     )
     raise typer.Exit(code=code)
