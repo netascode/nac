@@ -139,7 +139,9 @@ def setup(ctx: typer.Context, yes: Yes = False, prewarm: Prewarm = False) -> Non
         if explicit is None and constraint is not None and manifest is not None:
             pin += f", latest compatible with {manifest.module}"
         suffix = (
-            f" -- local v{source.version} does not satisfy" if source.version else ""
+            f" -- local v{source.version} does not satisfy"
+            if source.version is not None
+            else ""
         )
         return f"{name}: {pin} (uvx{suffix})", source, constraint
 

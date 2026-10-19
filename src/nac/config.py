@@ -46,7 +46,7 @@ class RenderConfig(BaseModel):
 class ValidateConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema: str | None = None
+    schema: str | None = None  # ty: ignore[invalid-attribute-override]
     rules: list[str] | None = None
 
 
@@ -89,7 +89,7 @@ class NacConfig(BaseModel):
     working_dir: Path = Path(".")
     data: DataConfig = DataConfig()
     render: RenderConfig | None = None
-    validate: ValidateConfig = ValidateConfig()
+    validate: ValidateConfig = ValidateConfig()  # ty: ignore[invalid-attribute-override]
     test: TestConfig = TestConfig()
     tools: ToolsConfig = ToolsConfig()
     env: EnvConfig = EnvConfig()
