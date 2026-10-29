@@ -3,14 +3,14 @@
 
 """Annotated Typer option aliases shared across nac's subcommands."""
 
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
 
-class VerbosityLevel(str, Enum):
+class VerbosityLevel(StrEnum):
     DEBUG = "DEBUG"
     INFO = "INFO"
     WARNING = "WARNING"
