@@ -20,6 +20,7 @@ from typer.testing import CliRunner
 
 from nac import __version__
 from nac.cli.main import app, run
+from nac.output import strip_ansi
 from nac.terraform import DEFAULT_PLAN_FILE
 
 cli = CliRunner()
@@ -938,6 +939,7 @@ def test_run_shows_nac_as_program_name_under_alias(mocker, capsys):
         run()
 
     assert exc.value.code == 0
-    out = capsys.readouterr().out
+    # Rich styles help output when it detects CI (e.g. GITHUB_ACTIONS).
+    out = strip_ansi(capsys.readouterr().out)
     assert "Usage: nac [OPTIONS]" in out
     assert "nac-cli" not in out
