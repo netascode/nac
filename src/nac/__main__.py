@@ -4,4 +4,4 @@
 import nac.cli.main
 
 if __name__ == "__main__":
-    nac.cli.main.app()
+    nac.cli.main.run()

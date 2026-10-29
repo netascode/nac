@@ -10,14 +10,16 @@ terraform/tofu binary.
 """
 
 import subprocess
+import sys
 from collections.abc import Callable
+from importlib.metadata import distribution
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
 from nac import __version__
-from nac.cli.main import app
+from nac.cli.main import app, run
 from nac.terraform import DEFAULT_PLAN_FILE
 
 cli = CliRunner()
@@ -910,3 +912,32 @@ def test_version_prints_package_version_and_exits(tmp_path):
 
     assert result.exit_code == 0
     assert result.output == f"nac {__version__}\n"
+
+
+# ---------------------------------------------------------------------------
+# console scripts
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_nac_and_nac_cli_console_scripts_share_entry_point():
+    scripts = {
+        ep.name: ep.value
+        for ep in distribution("nac-cli").entry_points
+        if ep.group == "console_scripts"
+    }
+
+    assert scripts == {"nac": "nac.cli.main:run", "nac-cli": "nac.cli.main:run"}
+
+
+@pytest.mark.unit
+def test_run_shows_nac_as_program_name_under_alias(mocker, capsys):
+    mocker.patch.object(sys, "argv", ["nac-cli", "--help"])
+
+    with pytest.raises(SystemExit) as exc:
+        run()
+
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    assert "Usage: nac [OPTIONS]" in out
+    assert "nac-cli" not in out

@@ -40,7 +40,8 @@ repository = "https://github.com/netascode/nac"
 documentation = "https://github.com/netascode/nac"
 
 [project.scripts]
-nac = "nac.cli.main:app"
+nac = "nac.cli.main:run"
+nac-cli = "nac.cli.main:run"
 
 [project.optional-dependencies]
 dev = [

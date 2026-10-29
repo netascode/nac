@@ -93,3 +93,12 @@ def main(
     configure_logging(verbosity)
     ctx.meta["no_color"] = no_color or "NO_COLOR" in os.environ
     ctx.obj = config
+
+
+def run() -> None:
+    """Console-script entry point for both `nac` and its `nac-cli` alias.
+
+    Pins the program name so help and usage always show `nac`, whichever
+    name it was invoked under.
+    """
+    app(prog_name="nac")
