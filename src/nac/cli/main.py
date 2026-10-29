@@ -16,7 +16,7 @@ from nac.config import DEFAULT_CONFIG_PATH, NacConfig, load_config
 from nac.exceptions import ConfigError, EngineNotFoundError, NoEngineAvailableError
 from nac.output import ensure_utf8_streams
 
-from .options import ConfigPath, NoColor, Verbosity, VerbosityLevel
+from .options import ConfigPath, NoColor, Verbosity, VerbosityLevel, Version
 
 app = typer.Typer(
     add_completion=False,
@@ -86,6 +86,7 @@ def main(
     config: ConfigPath = DEFAULT_CONFIG_PATH,
     verbosity: Verbosity = VerbosityLevel.WARNING,
     no_color: NoColor = False,
+    version: Version = False,
 ) -> None:
     """An umbrella CLI wrapping terraform/tofu, nac-validate, and nac-test."""
     ensure_utf8_streams()

@@ -37,7 +37,7 @@ uv tool upgrade nac-cli
 uv tool uninstall nac-cli
 ```
 
-Pin a specific version with `uv tool install nac-cli==0.2.0`.
+Pin a specific version with `uv tool install nac-cli==0.1.0`.
 
 > [!WARNING]
 > Don't `pip install nac` or run `uvx nac` -- that is a different, unrelated
@@ -96,6 +96,7 @@ Global options, available on every subcommand:
 | `--config` | `NAC_CONFIG` | `./nac.yaml` | Path to the config file. |
 | `-v`, `--verbosity` | `NAC_VERBOSITY` | `WARNING` | `DEBUG`\|`INFO`\|`WARNING`\|`ERROR`\|`CRITICAL`. |
 | `--no-color` | `NO_COLOR` | off | Disable colored output. |
+| `--version` | | | Show the version and exit. |
 
 Every subcommand except `setup` forwards extra arguments to the wrapped tool
 (e.g. `nac plan -var-file=prod.tfvars`), and `--help` shows `nac`'s help

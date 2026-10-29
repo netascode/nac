@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from nac import __version__
 from nac.cli.main import app
 from nac.terraform import DEFAULT_PLAN_FILE
 
@@ -896,3 +897,16 @@ def test_destroy_help_shows_own_and_tool_help(tmp_path, mocker, _tofu_on_path):
     assert "Usage:" in result.output
     argv = run_mock.call_args.args[0]
     assert argv == ["/usr/bin/tofu", "destroy", "--help"]
+
+
+# ---------------------------------------------------------------------------
+# nac --version
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_version_prints_package_version_and_exits(tmp_path):
+    result = cli.invoke(app, ["--config", str(tmp_path / "missing.yaml"), "--version"])
+
+    assert result.exit_code == 0
+    assert result.output == f"nac {__version__}\n"

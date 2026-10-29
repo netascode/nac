@@ -9,6 +9,8 @@ from typing import Annotated
 
 import typer
 
+from nac import __version__
+
 
 class VerbosityLevel(StrEnum):
     DEBUG = "DEBUG"
@@ -82,6 +84,23 @@ NoColor = Annotated[
     ),
 ]
 
+
+def _print_version(value: bool) -> None:
+    if value:
+        typer.echo(f"nac {__version__}")
+        raise typer.Exit()
+
+
+Version = Annotated[
+    bool,
+    typer.Option(
+        "--version",
+        help="Show the version and exit.",
+        callback=_print_version,
+        is_eager=True,
+    ),
+]
+
 __all__ = [
     "AutoApprove",
     "Artifacts",
@@ -90,5 +109,6 @@ __all__ = [
     "Prewarm",
     "Verbosity",
     "VerbosityLevel",
+    "Version",
     "Yes",
 ]
