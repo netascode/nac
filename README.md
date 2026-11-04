@@ -137,6 +137,12 @@ then streams `nac-validate` against the resolved data paths (`render.output`
 if a render just happened, else `data.paths`). The render step is fully
 implied by config, never a separate opt-in.
 
+`nac-validate`'s own `--artifacts` (loading schema and rules packaged with
+the Terraform module or with bundles in `nac/bundles/`) is turned on by
+setting `NAC_VALIDATE_ARTIFACTS=true`, so versions without that option are
+unaffected. Set `NAC_VALIDATE_ARTIFACTS=false` or pass `--no-artifacts`
+through to opt out.
+
 | Flag | Description |
 |---|---|
 | `--artifacts` | Also write the output (render step included) to `validate.txt`. |
@@ -177,6 +183,12 @@ Streams `nac-test` against the resolved data paths (`render.output` if
 `render` is configured, else `data.paths`, plus `data.defaults` whenever
 it's configured) and the `templates`/`filters`/`output` from the `test:`
 config block.
+
+`nac-test`'s own `--artifacts` (loading templates, filters and Jinja tests
+packaged with the Terraform module or with bundles in `nac/bundles/`) is
+turned on by setting `NAC_TEST_ARTIFACTS=true`, so versions without that
+option are unaffected. Set `NAC_TEST_ARTIFACTS=false` or pass
+`--no-artifacts` through to opt out.
 
 | Flag | Description |
 |---|---|

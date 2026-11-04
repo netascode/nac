@@ -13,7 +13,7 @@ from packaging.version import InvalidVersion, Version
 
 from nac.config import NacConfig, resolve_test_data, resolve_validate_data
 from nac.manifest import Manifest, compatible_range
-from nac.output import format_command
+from nac.output import apply_no_color_env, format_command
 
 logger = logging.getLogger(__name__)
 
@@ -154,6 +154,28 @@ def build_test_argv(cfg: NacConfig, manifest: Manifest | None = None) -> list[st
         argv += ["-f", cfg.test.filters]
     argv += ["-o", cfg.test.output]
     return argv
+
+
+# Env vars turning on bundle/module artifact discovery in nac-validate/nac-test
+# (`--artifacts`). Set via env rather than the CLI flag so that tool versions
+# predating the option simply ignore it.
+_ARTIFACTS_ENV = {
+    "nac-validate": "NAC_VALIDATE_ARTIFACTS",
+    "nac-test": "NAC_TEST_ARTIFACTS",
+}
+
+
+def build_tool_env(
+    tool: Literal["nac-validate", "nac-test"], *, no_color: bool
+) -> dict[str, str]:
+    """Subprocess env for `tool`, with artifacts enabled by default.
+
+    A value already set in the environment wins, and a passed-through
+    `--no-artifacts` overrides the env var, so users can still opt out.
+    """
+    env = apply_no_color_env(no_color)
+    env.setdefault(_ARTIFACTS_ENV[tool], "true")
+    return env
 
 
 def build_prewarm_argv(

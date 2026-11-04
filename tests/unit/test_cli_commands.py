@@ -943,3 +943,43 @@ def test_run_shows_nac_as_program_name_under_alias(mocker, capsys):
     out = strip_ansi(capsys.readouterr().out)
     assert "Usage: nac [OPTIONS]" in out
     assert "nac-cli" not in out
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("command", "env_var"),
+    [("validate", "NAC_VALIDATE_ARTIFACTS"), ("test", "NAC_TEST_ARTIFACTS")],
+)
+def test_tool_artifacts_enabled_by_default(
+    tmp_path, mocker, monkeypatch, command, env_var
+):
+    monkeypatch.delenv(env_var, raising=False)
+    config_path = _write_config(tmp_path, "")
+    run_streaming_mock = mocker.patch(
+        f"nac.cli.{command}.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), command])
+
+    assert result.exit_code == 0
+    assert run_streaming_mock.call_args.kwargs["env"][env_var] == "true"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("command", "env_var"),
+    [("validate", "NAC_VALIDATE_ARTIFACTS"), ("test", "NAC_TEST_ARTIFACTS")],
+)
+def test_tool_artifacts_env_override_is_kept(
+    tmp_path, mocker, monkeypatch, command, env_var
+):
+    monkeypatch.setenv(env_var, "false")
+    config_path = _write_config(tmp_path, "")
+    run_streaming_mock = mocker.patch(
+        f"nac.cli.{command}.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), command])
+
+    assert result.exit_code == 0
+    assert run_streaming_mock.call_args.kwargs["env"][env_var] == "false"

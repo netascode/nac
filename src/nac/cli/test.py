@@ -6,7 +6,6 @@
 import typer
 
 from nac import runner, tools
-from nac.output import apply_no_color_env
 
 from .main import app, get_config, get_no_color
 from .options import Artifacts
@@ -42,7 +41,7 @@ def test_(ctx: typer.Context, artifacts: Artifacts = False) -> None:
                 tools.tool_constraint("nac-test", cfg.tools.nac_test, manifest),
             ),
             cwd=cfg.working_dir,
-            env=apply_no_color_env(no_color),
+            env=tools.build_tool_env("nac-test", no_color=no_color),
             no_color=no_color,
             tool_label="nac-test",
             usage_as="nac test",
@@ -54,7 +53,7 @@ def test_(ctx: typer.Context, artifacts: Artifacts = False) -> None:
     code = runner.run_streaming(
         tools.build_test_argv(cfg, manifest) + ctx.args,
         cwd=cfg.working_dir,
-        env=apply_no_color_env(no_color),
+        env=tools.build_tool_env("nac-test", no_color=no_color),
         log_path=log_path,
         append=log_written,
         no_color=no_color,

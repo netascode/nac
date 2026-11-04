@@ -8,7 +8,7 @@ import logging
 import typer
 
 from nac import runner, terraform, tools
-from nac.output import GREEN, apply_no_color_env, color, echo_summary
+from nac.output import GREEN, color, echo_summary
 
 from .main import app, get_config, get_no_color, resolve_engine_or_exit
 from .options import Artifacts
@@ -41,7 +41,7 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             ctx,
             tools.build_help_argv("nac-validate", constraint),
             cwd=cfg.working_dir,
-            env=apply_no_color_env(no_color),
+            env=tools.build_tool_env("nac-validate", no_color=no_color),
             no_color=no_color,
             tool_label="nac-validate",
             usage_as="nac validate",
@@ -81,7 +81,7 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
     code = runner.run_streaming(
         tools.build_validate_argv(cfg, manifest) + ctx.args,
         cwd=cfg.working_dir,
-        env=apply_no_color_env(no_color),
+        env=tools.build_tool_env("nac-validate", no_color=no_color),
         log_path=log_path,
         append=log_written,
         no_color=no_color,
