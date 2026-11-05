@@ -12,6 +12,7 @@ from packaging.specifiers import InvalidSpecifier, SpecifierSet
 from packaging.version import InvalidVersion, Version
 
 from nac.config import NacConfig, resolve_test_data, resolve_validate_data
+from nac.exceptions import UvNotFoundError
 from nac.manifest import Manifest, compatible_range
 from nac.output import apply_no_color_env, format_command
 
@@ -19,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 _SPECIFIER_PREFIXES = ("==", "!=", ">=", "<=", "~=", ">", "<")
 _VERSION_RE = re.compile(r"\d+(?:\.\d+)+(?:[a-zA-Z0-9.\-+]*)?")
+
+UV_INSTALL_URL = "https://docs.astral.sh/uv/getting-started/installation/"
 
 
 def _pin_suffix(version: str) -> str:
@@ -117,13 +120,42 @@ def resolve_tool_source(
     return ToolSource(mode="uvx", path=None, version=version)
 
 
+def uv_available() -> bool:
+    """Whether uv (which provides `uvx`) is on PATH."""
+    return shutil.which("uv") is not None
+
+
+def uv_not_found_message(
+    tool: Literal["nac-validate", "nac-test"],
+    source: ToolSource,
+    constraint: str | None,
+) -> str:
+    """Explain why `tool` needs uv and how to fix it (install uv or the tool)."""
+    if source.version is not None:
+        reason = f"local {tool} v{source.version} does not satisfy {constraint}"
+    else:
+        reason = f"{tool} is not installed locally"
+    wanted = f"{tool}{_pin_suffix(constraint)}" if constraint is not None else tool
+    return (
+        f"{reason}, so it would be run via `uvx`, but `uv` was not found on "
+        f"PATH -- install uv ({UV_INSTALL_URL}) or install {wanted} yourself."
+    )
+
+
 def _tool_prefix(
     tool: Literal["nac-validate", "nac-test"], constraint: str | None
 ) -> list[str]:
+    """Command prefix for `tool`: the local binary, else `uvx [--from ...]`.
+
+    Raises `UvNotFoundError` if `uvx` would be needed but isn't on PATH, so
+    `nac` works without uv as long as suitable local installs exist.
+    """
     source = resolve_tool_source(tool, constraint)
     if source.mode == "local":
         assert source.path is not None
         return [source.path]
+    if not uv_available():
+        raise UvNotFoundError(uv_not_found_message(tool, source, constraint))
     argv = ["uvx"]
     if constraint is not None:
         argv += ["--from", f"{tool}{_pin_suffix(constraint)}"]

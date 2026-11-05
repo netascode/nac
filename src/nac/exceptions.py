@@ -32,3 +32,7 @@ class BootstrapDeclinedError(BootstrapError):
 
 class ChecksumMismatchError(BootstrapError):
     """The downloaded archive's SHA-256 didn't match the published checksum."""
+
+
+class UvNotFoundError(NacError):
+    """A wrapped tool needs `uvx` (no usable local install) but uv isn't on PATH."""

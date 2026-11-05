@@ -6,8 +6,9 @@
 import typer
 
 from nac import runner, tools
+from nac.exceptions import UvNotFoundError
 
-from .main import app, get_config, get_no_color
+from .main import app, fail, get_config, get_no_color
 from .options import Artifacts
 from .passthrough import (
     PASSTHROUGH_CONTEXT_SETTINGS,
@@ -33,13 +34,22 @@ def test_(ctx: typer.Context, artifacts: Artifacts = False) -> None:
     log_path = cfg.working_dir / "test.txt" if artifacts else None
     manifest = get_manifest(ctx, cfg)
 
-    if wants_help(ctx):
-        show_help_and_exit(
-            ctx,
+    try:
+        tool_argv = (
             tools.build_help_argv(
                 "nac-test",
                 tools.tool_constraint("nac-test", cfg.tools.nac_test, manifest),
-            ),
+            )
+            if wants_help(ctx)
+            else tools.build_test_argv(cfg, manifest) + ctx.args
+        )
+    except UvNotFoundError as exc:
+        fail(str(exc))
+
+    if wants_help(ctx):
+        show_help_and_exit(
+            ctx,
+            tool_argv,
             cwd=cfg.working_dir,
             env=tools.build_tool_env("nac-test", no_color=no_color),
             no_color=no_color,
@@ -51,7 +61,7 @@ def test_(ctx: typer.Context, artifacts: Artifacts = False) -> None:
     log_written = emit_warnings(warnings, no_color=no_color, log_path=log_path)
 
     code = runner.run_streaming(
-        tools.build_test_argv(cfg, manifest) + ctx.args,
+        tool_argv,
         cwd=cfg.working_dir,
         env=tools.build_tool_env("nac-test", no_color=no_color),
         log_path=log_path,

@@ -347,3 +347,55 @@ def test_prewarm_skips_locally_satisfied_tool(tmp_path, mocker):
     run_streaming_mock.assert_called_once()
     (argv,), _kwargs = run_streaming_mock.call_args
     assert argv[0:5] == ["uv", "tool", "install", "--from", "nac-test"]
+
+
+@pytest.mark.unit
+def test_setup_succeeds_without_uv_when_tools_resolve_locally(tmp_path, mocker):
+    """uv is only needed for a tool without a usable local install."""
+    config_path = _write_config(tmp_path, "")
+    mocker.patch(
+        "shutil.which",
+        side_effect=_which(
+            {
+                "tofu": "/usr/bin/tofu",
+                "nac-validate": "/usr/bin/nac-validate",
+                "nac-test": "/usr/bin/nac-test",
+            }
+        ),
+    )
+    mocker.patch("nac.tools._local_tool_version", return_value="1.2.3")
+
+    result = cli.invoke(app, ["--config", str(config_path), "setup"])
+
+    assert result.exit_code == 0
+    assert "uv: not found (not needed, all tools resolve locally)" in result.output
+    assert "nac-validate: v1.2.3 (local)" in result.output
+    assert "nac-test: v1.2.3 (local)" in result.output
+
+
+@pytest.mark.unit
+def test_setup_fails_without_uv_when_a_tool_needs_uvx(tmp_path, mocker):
+    """Without uv, a tool lacking a satisfying local install fails setup,
+    naming the tool and why."""
+    config_path = _write_config(tmp_path, 'tools:\n  nac_test: ">=0.9,<1.0"\n')
+    mocker.patch(
+        "shutil.which",
+        side_effect=_which(
+            {
+                "tofu": "/usr/bin/tofu",
+                "nac-validate": "/usr/bin/nac-validate",
+                "nac-test": "/usr/bin/nac-test",
+            }
+        ),
+    )
+    mocker.patch("nac.tools._local_tool_version", return_value="1.0.0")
+
+    result = cli.invoke(app, ["--config", str(config_path), "setup"])
+
+    assert result.exit_code != 0
+    assert (
+        "local nac-test v1.0.0 does not satisfy >=0.9,<1.0, so it would be run "
+        "via `uvx`, but `uv` was not found on PATH" in result.output
+    )
+    assert "install nac-test>=0.9,<1.0 yourself" in result.output
+    assert "nac-validate" not in result.output

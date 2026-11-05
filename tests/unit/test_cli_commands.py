@@ -41,7 +41,9 @@ def _tofu_on_path(mocker):
     """Make `tofu` resolve as the engine everywhere via a shared shutil.which."""
     mocker.patch(
         "shutil.which",
-        side_effect=_which({"tofu": "/usr/bin/tofu", "terraform": None}),
+        side_effect=_which(
+            {"tofu": "/usr/bin/tofu", "terraform": None, "uv": "/usr/bin/uv"}
+        ),
     )
 
 
@@ -108,7 +110,7 @@ def test_init_propagates_nonzero_exit_code(tmp_path, mocker, _tofu_on_path):
 @pytest.mark.unit
 def test_init_fails_cleanly_when_no_engine_available(tmp_path, mocker):
     config_path = _write_config(tmp_path, "")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_streaming_mock = mocker.patch("nac.cli.init.runner.run_streaming")
 
     result = cli.invoke(app, ["--config", str(config_path), "init"])
@@ -125,7 +127,7 @@ def test_init_fails_cleanly_when_no_engine_available(tmp_path, mocker):
 @pytest.mark.unit
 def test_validate_without_render_target_skips_render_step(tmp_path, mocker):
     config_path = _write_config(tmp_path, "")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=0
     )
@@ -137,6 +139,42 @@ def test_validate_without_render_target_skips_render_step(tmp_path, mocker):
     argv = run_streaming_mock.call_args_list[0].args[0]
     assert argv[0] == "uvx"
     assert "nac-validate" in argv
+
+
+@pytest.mark.unit
+def test_validate_without_uv_uses_local_install(tmp_path, mocker):
+    config_path = _write_config(tmp_path, "")
+    mocker.patch(
+        "shutil.which",
+        side_effect=_which({"nac-validate": "/usr/bin/nac-validate"}),
+    )
+    mocker.patch("nac.tools._local_tool_version", return_value="1.2.3")
+    run_streaming_mock = mocker.patch(
+        "nac.cli.validate.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "validate"])
+
+    assert result.exit_code == 0
+    argv = run_streaming_mock.call_args_list[0].args[0]
+    assert argv[0] == "/usr/bin/nac-validate"
+
+
+@pytest.mark.unit
+def test_validate_without_uv_or_local_install_fails_before_render(tmp_path, mocker):
+    config_path = _write_config(
+        tmp_path,
+        "render:\n  target: module.example\n  output: rendered/\n",
+    )
+    mocker.patch("shutil.which", side_effect=_which({"tofu": "/usr/bin/tofu"}))
+    run_streaming_mock = mocker.patch("nac.cli.validate.runner.run_streaming")
+
+    result = cli.invoke(app, ["--config", str(config_path), "validate"])
+
+    assert result.exit_code == 1
+    assert "nac-validate is not installed locally" in result.output
+    assert "`uv` was not found on PATH" in result.output
+    run_streaming_mock.assert_not_called()
 
 
 @pytest.mark.unit
@@ -575,7 +613,7 @@ def test_destroy_propagates_nonzero_exit_code(tmp_path, mocker, _tofu_on_path):
 @pytest.mark.unit
 def test_destroy_fails_cleanly_when_no_engine_available(tmp_path, mocker):
     config_path = _write_config(tmp_path, "")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_streaming_mock = mocker.patch("nac.cli.destroy.runner.run_streaming")
 
     result = cli.invoke(app, ["--config", str(config_path), "destroy"])
@@ -592,7 +630,7 @@ def test_destroy_fails_cleanly_when_no_engine_available(tmp_path, mocker):
 @pytest.mark.unit
 def test_test_streams_test_argv_and_propagates_exit_code(tmp_path, mocker):
     config_path = _write_config(tmp_path, "")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_streaming_mock = mocker.patch(
         "nac.cli.test.runner.run_streaming", return_value=0
     )
@@ -604,6 +642,19 @@ def test_test_streams_test_argv_and_propagates_exit_code(tmp_path, mocker):
     assert argv[0] == "uvx"
     assert "nac-test" in argv
     assert run_streaming_mock.call_args_list[0].kwargs.get("log_path") is None
+
+
+@pytest.mark.unit
+def test_test_without_uv_or_local_install_fails_cleanly(tmp_path, mocker):
+    config_path = _write_config(tmp_path, "")
+    mocker.patch("shutil.which", side_effect=_which({}))
+    run_streaming_mock = mocker.patch("nac.cli.test.runner.run_streaming")
+
+    result = cli.invoke(app, ["--config", str(config_path), "test"])
+
+    assert result.exit_code == 1
+    assert "nac-test is not installed locally" in result.output
+    run_streaming_mock.assert_not_called()
 
 
 @pytest.mark.unit
@@ -654,7 +705,7 @@ def test_validate_extra_args_are_appended(tmp_path, mocker):
 @pytest.mark.unit
 def test_validate_help_shows_own_and_tool_help(tmp_path, mocker):
     config_path = _write_config(tmp_path, "")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_mock = mocker.patch(
         "nac.cli.passthrough.subprocess.run",
         return_value=subprocess.CompletedProcess(
@@ -747,7 +798,7 @@ def test_test_extra_args_are_appended(tmp_path, mocker):
 @pytest.mark.unit
 def test_test_help_shows_own_and_tool_help(tmp_path, mocker):
     config_path = _write_config(tmp_path, "")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_mock = mocker.patch(
         "nac.cli.passthrough.subprocess.run",
         return_value=subprocess.CompletedProcess(

@@ -25,10 +25,6 @@ from .versions import emit_warnings, get_manifest, tool_warnings
 
 logger = logging.getLogger(__name__)
 
-UV_NOT_FOUND = (
-    "`uv` not found on PATH -- install it: "
-    "https://docs.astral.sh/uv/getting-started/installation/"
-)
 TENV_NOT_FOUND = (
     "`tenv` not found on PATH -- required because `tools.terraform.version` "
     "is set. Install tenv: https://github.com/tofuutils/tenv"
@@ -89,9 +85,7 @@ def setup(ctx: typer.Context, yes: Yes = False, prewarm: Prewarm = False) -> Non
     cfg = get_config(ctx)
     no_color = get_no_color(ctx)
 
-    if shutil.which("uv") is None:
-        fail(UV_NOT_FOUND)
-    lines: list[str] = ["uv: found"]
+    lines: list[str] = []
 
     if cfg.tools.terraform.version is not None and shutil.which("tenv") is None:
         fail(TENV_NOT_FOUND)
@@ -151,6 +145,23 @@ def setup(ctx: typer.Context, yes: Yes = False, prewarm: Prewarm = False) -> Non
     test_line, test_source, test_constraint = _tool_summary_line(
         "nac-test", cfg.tools.nac_test
     )
+    uv_errors: list[str] = []
+    if validate_source.mode == "uvx":
+        uv_errors.append(
+            tools.uv_not_found_message(
+                "nac-validate", validate_source, validate_constraint
+            )
+        )
+    if test_source.mode == "uvx":
+        uv_errors.append(
+            tools.uv_not_found_message("nac-test", test_source, test_constraint)
+        )
+    if tools.uv_available():
+        lines.insert(0, "uv: found")
+    elif uv_errors:
+        fail("\n".join(uv_errors))
+    else:
+        lines.insert(0, "uv: not found (not needed, all tools resolve locally)")
     lines.append(validate_line)
     lines.append(test_line)
     warnings = [

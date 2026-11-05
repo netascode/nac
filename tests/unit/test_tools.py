@@ -14,6 +14,7 @@ from nac.config import (
     ToolsConfig,
     ValidateConfig,
 )
+from nac.exceptions import UvNotFoundError
 from nac.manifest import Manifest
 from nac.tools import (
     ToolSource,
@@ -38,13 +39,16 @@ def make_config(**overrides: Any) -> NacConfig:
 
 @pytest.fixture(autouse=True)
 def no_local_tool(mocker):
-    """By default, pretend nac-validate/nac-test aren't on PATH.
+    """By default, pretend nac-validate/nac-test aren't on PATH but uv is.
 
     Keeps argv-building tests deterministic regardless of what's actually
     installed on the machine running the suite. Tests exercising the local
     resolution path override this explicitly.
     """
-    mocker.patch("nac.tools.shutil.which", return_value=None)
+    mocker.patch(
+        "nac.tools.shutil.which",
+        side_effect=lambda name: "/usr/bin/uv" if name == "uv" else None,
+    )
 
 
 @pytest.mark.unit
@@ -492,3 +496,39 @@ class TestManifestDefaultInArgv:
         argv = build_validate_argv(make_config(), MANIFEST)
 
         assert argv[0] == "/usr/bin/nac-validate"
+
+
+@pytest.mark.unit
+class TestUvNotFound:
+    def test_no_local_install_and_no_uv_raises(self, mocker):
+        mocker.patch("nac.tools.shutil.which", return_value=None)
+
+        with pytest.raises(UvNotFoundError, match="nac-test is not installed locally"):
+            build_help_argv("nac-test", None)
+
+    def test_local_mismatch_and_no_uv_names_version_and_constraint(self, mocker):
+        mocker.patch(
+            "nac.tools.shutil.which",
+            side_effect=lambda name: (
+                "/usr/bin/nac-validate" if name == "nac-validate" else None
+            ),
+        )
+        mocker.patch("nac.tools._local_tool_version", return_value="1.0.0")
+
+        with pytest.raises(UvNotFoundError) as exc_info:
+            build_help_argv("nac-validate", "1.2.3")
+
+        message = str(exc_info.value)
+        assert "local nac-validate v1.0.0 does not satisfy 1.2.3" in message
+        assert "install nac-validate==1.2.3 yourself" in message
+
+    def test_local_install_works_without_uv(self, mocker):
+        mocker.patch(
+            "nac.tools.shutil.which",
+            side_effect=lambda name: (
+                "/usr/bin/nac-test" if name == "nac-test" else None
+            ),
+        )
+        mocker.patch("nac.tools._local_tool_version", return_value="1.2.3")
+
+        assert build_help_argv("nac-test", "1.2.3") == ["/usr/bin/nac-test", "--help"]

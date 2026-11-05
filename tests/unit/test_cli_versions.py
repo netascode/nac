@@ -53,7 +53,7 @@ def _tofu_on_path(mocker):
 @pytest.mark.unit
 def test_no_manifest_no_warnings_and_unconstrained_tools(tmp_path, mocker):
     config_path = _write_config(tmp_path, "tools:\n  nac_validate: 1.2.0\n")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=1
     )
@@ -78,7 +78,7 @@ def test_validate_defaults_to_latest_compatible_without_warning(
 ):
     write_module(tmp_path)
     config_path = _write_config(tmp_path)
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=0
     )
@@ -97,7 +97,7 @@ def test_validate_warns_on_untested_pin_and_notes_failure(
 ):
     write_module(tmp_path)
     config_path = _write_config(tmp_path, "tools:\n  nac_validate: 1.2.0\n")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     mocker.patch("nac.cli.validate.runner.run_streaming", return_value=1)
 
     result = cli.invoke(app, ["--config", str(config_path), "validate"])
@@ -114,7 +114,7 @@ def test_validate_warns_on_untested_pin_and_notes_failure(
 def test_validate_warning_without_note_on_success(tmp_path, mocker, write_module):
     write_module(tmp_path)
     config_path = _write_config(tmp_path, "tools:\n  nac_validate: 1.2.0\n")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     mocker.patch("nac.cli.validate.runner.run_streaming", return_value=0)
 
     result = cli.invoke(app, ["--config", str(config_path), "validate"])
@@ -130,7 +130,7 @@ def test_validate_range_pin_resolved_by_uvx_is_not_checked(
 ):
     write_module(tmp_path)
     config_path = _write_config(tmp_path, 'tools:\n  nac_validate: ">=1.0"\n')
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     mocker.patch("nac.cli.validate.runner.run_streaming", return_value=0)
 
     result = cli.invoke(app, ["--config", str(config_path), "validate"])
@@ -158,7 +158,7 @@ def test_validate_checks_local_install_version(tmp_path, mocker, write_module):
 def test_validate_artifacts_include_warnings(tmp_path, mocker, write_module):
     write_module(tmp_path)
     config_path = _write_config(tmp_path, "tools:\n  nac_validate: 1.2.0\n")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=1
     )
@@ -205,7 +205,7 @@ def test_validate_with_render_artifacts_keep_warnings_first(
 def test_test_defaults_to_latest_compatible(tmp_path, mocker, write_module):
     write_module(tmp_path)
     config_path = _write_config(tmp_path)
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     run_streaming_mock = mocker.patch(
         "nac.cli.test.runner.run_streaming", return_value=0
     )
@@ -223,7 +223,7 @@ def test_test_warns_on_untested_pin_and_preserves_exit_code(
 ):
     write_module(tmp_path)
     config_path = _write_config(tmp_path, "tools:\n  nac_test: 3.0.0\n")
-    mocker.patch("shutil.which", return_value=None)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
     mocker.patch("nac.cli.test.runner.run_streaming", return_value=4)
 
     result = cli.invoke(app, ["--config", str(config_path), "test"])

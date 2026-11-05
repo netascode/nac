@@ -8,9 +8,10 @@ import logging
 import typer
 
 from nac import runner, terraform, tools
+from nac.exceptions import UvNotFoundError
 from nac.output import GREEN, color, echo_summary
 
-from .main import app, get_config, get_no_color, resolve_engine_or_exit
+from .main import app, fail, get_config, get_no_color, resolve_engine_or_exit
 from .options import Artifacts
 from .passthrough import (
     PASSTHROUGH_CONTEXT_SETTINGS,
@@ -36,10 +37,19 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
     manifest = get_manifest(ctx, cfg)
     constraint = tools.tool_constraint("nac-validate", cfg.tools.nac_validate, manifest)
 
+    try:
+        tool_argv = (
+            tools.build_help_argv("nac-validate", constraint)
+            if wants_help(ctx)
+            else tools.build_validate_argv(cfg, manifest) + ctx.args
+        )
+    except UvNotFoundError as exc:
+        fail(str(exc))
+
     if wants_help(ctx):
         show_help_and_exit(
             ctx,
-            tools.build_help_argv("nac-validate", constraint),
+            tool_argv,
             cwd=cfg.working_dir,
             env=tools.build_tool_env("nac-validate", no_color=no_color),
             no_color=no_color,
@@ -79,7 +89,7 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             )
 
     code = runner.run_streaming(
-        tools.build_validate_argv(cfg, manifest) + ctx.args,
+        tool_argv,
         cwd=cfg.working_dir,
         env=tools.build_tool_env("nac-validate", no_color=no_color),
         log_path=log_path,

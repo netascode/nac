@@ -45,9 +45,11 @@ Pin a specific version with `uv tool install nac-cli==0.1.0`.
 
 ## Prerequisites
 
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — always
-  required; `nac` uses it to run `nac-validate`/`nac-test` via `uvx`, so
-  you never install those two yourself.
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) — `nac`
+  uses it to run `nac-validate`/`nac-test` via `uvx`, so you never install
+  those two yourself. Only optional if both are already installed locally
+  in versions that satisfy their constraints (see
+  [Tool/version management](#toolversion-management)).
 - `terraform` or `tofu` on `PATH` — if neither is installed, `nac setup` can
   bootstrap-install OpenTofu for you (see
   [Tool/version management](#toolversion-management)).
@@ -107,7 +109,8 @@ command's output to `<command>.txt` in `working_dir` (e.g. `validate.txt`).
 ### `nac setup`
 
 Verifies prerequisites and reports resolved tool versions — a pre-flight for
-CI and local use. Checks `uv` is on `PATH`; checks `tenv` only if
+CI and local use. Checks `uv` is on `PATH` (only if `nac-validate` or
+`nac-test` lacks a satisfying local install); checks `tenv` only if
 `tools.terraform.version` is set; resolves the `terraform`/`tofu` binary
 (explicit `tools.terraform.engine`, or auto-detected: `tofu` then
 `terraform`); checks every `env.required` variable is set (never prints
@@ -310,7 +313,9 @@ env:
   published release when no usable local install exists -- or, if the
   module ships a [manifest](#tested-versions), the latest release compatible
   with the tested one. `nac setup` reports which source (`local` or `uvx`)
-  each tool actually resolved to.
+  each tool actually resolved to. `uv` is only needed when a tool resolves
+  to `uvx`; if it isn't on `PATH` then, `nac` fails with a message naming the
+  tool and the version to install locally instead.
 
 ## Tested versions
 
