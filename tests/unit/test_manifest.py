@@ -188,3 +188,111 @@ class TestLoadManifest:
 
         assert manifest is not None
         assert manifest.module == "module.nxos"
+
+
+CONFIG_MANIFEST = """\
+schema: 1
+tools:
+  nac-test: 2.0.0
+config:
+  render:
+    resource: local_sensitive_file.model
+    output: model.yaml
+  env:
+    required: [NXOS_USERNAME, NXOS_PASSWORD]
+"""
+
+
+@pytest.mark.unit
+class TestManifestConfig:
+    def test_config_resolved_against_module_address(self, tmp_path, write_module):
+        write_module(tmp_path, manifest=CONFIG_MANIFEST)
+
+        manifest = load_manifest(tmp_path)
+
+        assert manifest is not None
+        assert manifest.config == {
+            "render": {
+                "target": "module.nxos.local_sensitive_file.model",
+                "output": "model.yaml",
+            },
+            "env": {"required": ["NXOS_USERNAME", "NXOS_PASSWORD"]},
+        }
+
+    def test_custom_module_name_is_used(self, tmp_path, write_module):
+        write_module(tmp_path, manifest=CONFIG_MANIFEST, key="fabric")
+
+        manifest = load_manifest(tmp_path)
+
+        assert manifest is not None
+        assert (
+            manifest.config["render"]["target"]
+            == "module.fabric.local_sensitive_file.model"
+        )
+
+    def test_nested_module_address(self, tmp_path, write_module):
+        write_module(tmp_path, manifest=None, key="wrapper", source="./wrapper")
+        write_module(tmp_path, manifest=CONFIG_MANIFEST, key="wrapper.nxos")
+
+        manifest = load_manifest(tmp_path)
+
+        assert manifest is not None
+        assert (
+            manifest.config["render"]["target"]
+            == "module.wrapper.module.nxos.local_sensitive_file.model"
+        )
+
+    def test_without_config_is_empty(self, tmp_path, write_module):
+        write_module(tmp_path)
+
+        manifest = load_manifest(tmp_path)
+
+        assert manifest is not None
+        assert manifest.config == {}
+
+    def test_output_only(self, tmp_path, write_module):
+        write_module(
+            tmp_path, manifest="schema: 1\nconfig:\n  render:\n    output: m.yaml\n"
+        )
+
+        manifest = load_manifest(tmp_path)
+
+        assert manifest is not None
+        assert manifest.config == {"render": {"output": "m.yaml"}}
+
+    @pytest.mark.parametrize(
+        "config",
+        [
+            "config:\n  render:\n    resource: local_file.model\n",  # no output
+            "config:\n  render:\n    resource: module.x.local_file.m\n"
+            "    output: m.yaml\n",  # absolute address
+            "config:\n  env:\n    required: NXOS_USERNAME\n",  # not a list
+            "config: [render]\n",  # not a mapping
+        ],
+    )
+    def test_invalid_config_is_ignored_but_tools_kept(
+        self, tmp_path, write_module, caplog, config
+    ):
+        write_module(
+            tmp_path, manifest=f"schema: 1\ntools: {{nac-test: 2.0.0}}\n{config}"
+        )
+
+        with caplog.at_level(logging.WARNING, logger="nac.manifest"):
+            manifest = load_manifest(tmp_path)
+
+        assert manifest is not None
+        assert manifest.tools == {"nac-test": "2.0.0"}
+        assert manifest.config == {}
+        assert "Ignoring invalid `config`" in caplog.text
+
+    def test_unknown_config_keys_are_ignored(self, tmp_path, write_module):
+        write_module(
+            tmp_path,
+            manifest="schema: 1\nconfig:\n  working_dir: x\n"
+            "  env:\n    required: [A]\n",
+        )
+
+        manifest = load_manifest(tmp_path)
+
+        assert manifest is not None
+        assert manifest.config == {"env": {"required": ["A"]}}

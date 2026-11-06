@@ -5,8 +5,9 @@
 # names as nac.yaml's own keys; pydantic only warns because they shadow
 # deprecated pydantic-v1 classmethods that this codebase never calls.
 import warnings
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pydantic
 import ruamel.yaml
@@ -95,15 +96,28 @@ class NacConfig(BaseModel):
     env: EnvConfig = EnvConfig()
 
 
-def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> NacConfig:
+def load_config(
+    path: Path | str = DEFAULT_CONFIG_PATH,
+    *,
+    defaults: Mapping[str, Any] | None = None,
+) -> NacConfig:
     """Load, validate, and resolve conventions for a nac.yaml file.
 
     A missing file is treated as an empty config -- every field defaults,
-    so `nac` works with zero config present. Raises ConfigError (never a
-    raw pydantic/ruamel traceback) on malformed YAML or a schema
-    validation failure.
+    so `nac` works with zero config present. `defaults` (a module's
+    manifest `config`) fills in whatever the file doesn't set; see
+    `merge_defaults`. Raises ConfigError (never a raw pydantic/ruamel
+    traceback) on malformed YAML or a schema validation failure.
     """
     path = Path(path)
+    raw = read_raw_config(path)
+    if defaults is not None:
+        raw, _ = merge_defaults(raw, defaults)
+    return build_config(raw, path)
+
+
+def read_raw_config(path: Path) -> dict[str, Any]:
+    """The nac.yaml mapping as written, without validation or defaults."""
     raw: object = {}
     if path.is_file():
         yaml = ruamel.yaml.YAML(typ="safe")
@@ -119,13 +133,51 @@ def load_config(path: Path | str = DEFAULT_CONFIG_PATH) -> NacConfig:
         raise ConfigError(
             f"Config file {path} must contain a YAML mapping at the top level"
         )
+    return raw
 
+
+def build_config(raw: Mapping[str, Any], path: Path) -> NacConfig:
+    """Validate a raw nac.yaml mapping and apply filesystem conventions."""
     try:
         cfg = NacConfig.model_validate(raw)
     except pydantic.ValidationError as exc:
         raise ConfigError(_format_validation_error(path, exc)) from exc
 
     return _apply_filesystem_defaults(cfg, path)
+
+
+def merge_defaults(
+    raw: Mapping[str, Any], defaults: Mapping[str, Any]
+) -> tuple[dict[str, Any], list[str]]:
+    """Fill `raw` (nac.yaml as written) with `defaults` (from a manifest).
+
+    Mappings are merged key by key; any other value set in `raw` -- lists
+    and an explicit `null` included -- wins as a whole. So
+    `render: {output: x.yaml}` keeps the module's render target, while
+    `render: null` or `render: {target: null}` turns it off.
+
+    Returns the merged mapping and the dotted keys taken from `defaults`.
+    """
+    merged = dict(raw)
+    applied: list[str] = []
+    for key, value in defaults.items():
+        if key not in raw:
+            merged[key] = value
+            applied.extend(_leaf_keys(key, value))
+        elif isinstance(raw[key], Mapping) and isinstance(value, Mapping):
+            merged[key], nested = merge_defaults(raw[key], value)
+            applied.extend(f"{key}.{leaf}" for leaf in nested)
+    return merged, applied
+
+
+def _leaf_keys(prefix: str, value: Any) -> list[str]:
+    if isinstance(value, Mapping) and value:
+        return [
+            leaf
+            for key, nested in value.items()
+            for leaf in _leaf_keys(f"{prefix}.{key}", nested)
+        ]
+    return [prefix]
 
 
 def _format_validation_error(path: Path, exc: pydantic.ValidationError) -> str:

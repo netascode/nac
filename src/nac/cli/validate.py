@@ -78,12 +78,19 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
         log_written = True
         if code != 0:
             raise typer.Exit(code=code)
+        output = cfg.render.output
+        if output is not None and not (cfg.working_dir / output).exists():
+            fail(
+                f"Render step `{cfg.render.target}` did not write `{output}`. "
+                "Check that `render.output` matches the file written by the "
+                "render target (for Network-as-Code modules: `write_model_file`)."
+            )
         if quiet:
             echo_summary(
                 "Render Summary",
                 [
                     f"Render: {color(GREEN, 'OK', no_color=no_color)} "
-                    f"({cfg.render.target})"
+                    f"({cfg.render.target} -> {output})"
                 ],
                 no_color=no_color,
             )

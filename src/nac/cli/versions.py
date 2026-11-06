@@ -19,14 +19,17 @@ from nac.config import NacConfig
 from nac.manifest import Manifest, load_manifest
 from nac.output import YELLOW, color
 
-_MANIFEST_KEY = "manifest"
+from .main import MANIFEST_META_KEY
 
 
 def get_manifest(ctx: typer.Context, cfg: NacConfig) -> Manifest | None:
-    """Load (once per invocation) the manifest of the initialized module."""
-    if _MANIFEST_KEY not in ctx.meta:
-        ctx.meta[_MANIFEST_KEY] = load_manifest(cfg.working_dir)
-    return cast("Manifest | None", ctx.meta[_MANIFEST_KEY])
+    """Load (once per invocation) the manifest of the initialized module.
+
+    Normally already loaded by `get_config`.
+    """
+    if MANIFEST_META_KEY not in ctx.meta:
+        ctx.meta[MANIFEST_META_KEY] = load_manifest(cfg.working_dir)
+    return cast("Manifest | None", ctx.meta[MANIFEST_META_KEY])
 
 
 def tool_warnings(

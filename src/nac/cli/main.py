@@ -12,11 +12,22 @@ from typing import NoReturn, cast
 import typer
 
 from nac import terraform
-from nac.config import DEFAULT_CONFIG_PATH, NacConfig, load_config
+from nac.config import (
+    DEFAULT_CONFIG_PATH,
+    NacConfig,
+    build_config,
+    merge_defaults,
+    read_raw_config,
+)
 from nac.exceptions import ConfigError, EngineNotFoundError, NoEngineAvailableError
+from nac.manifest import load_manifest
 from nac.output import ensure_utf8_streams
 
 from .options import ConfigPath, NoColor, Verbosity, VerbosityLevel, Version
+
+# ctx.meta keys set by get_config
+MANIFEST_META_KEY = "manifest"
+MODULE_DEFAULTS_META_KEY = "module_defaults"
 
 app = typer.Typer(
     add_completion=False,
@@ -47,13 +58,27 @@ def get_config(ctx: typer.Context) -> NacConfig:
     file present. `ctx.obj` starts out holding the raw --config path and
     is replaced with the resolved NacConfig on first call, so repeated
     calls within the same invocation don't re-read the file.
+
+    nac.yaml settings the project leaves unset are filled from the `config`
+    section of the initialized module's manifest. The manifest and the
+    dotted keys taken from it are stashed on `ctx.meta`.
     """
     if isinstance(ctx.obj, NacConfig):
         return ctx.obj
+    path = cast(Path, ctx.obj)
     try:
-        cfg = load_config(cast(Path, ctx.obj))
+        raw = read_raw_config(path)
+        cfg = build_config(raw, path)
+        manifest = load_manifest(cfg.working_dir)
+        applied: list[str] = []
+        if manifest is not None and manifest.config:
+            merged, applied = merge_defaults(raw, manifest.config)
+            if applied:
+                cfg = build_config(merged, path)
     except ConfigError as exc:
         fail(str(exc))
+    ctx.meta[MANIFEST_META_KEY] = manifest
+    ctx.meta[MODULE_DEFAULTS_META_KEY] = applied
     ctx.obj = cfg
     return cfg
 

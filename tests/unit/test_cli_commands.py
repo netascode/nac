@@ -166,6 +166,7 @@ def test_validate_without_uv_or_local_install_fails_before_render(tmp_path, mock
         tmp_path,
         "render:\n  target: module.example\n  output: rendered/\n",
     )
+    (tmp_path / "rendered").mkdir()
     mocker.patch("shutil.which", side_effect=_which({"tofu": "/usr/bin/tofu"}))
     run_streaming_mock = mocker.patch("nac.cli.validate.runner.run_streaming")
 
@@ -185,6 +186,7 @@ def test_validate_with_render_target_runs_render_then_validate(
         tmp_path,
         "render:\n  target: module.example\n  output: rendered/\n",
     )
+    (tmp_path / "rendered").mkdir()
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=0
     )
@@ -204,7 +206,7 @@ def test_validate_with_render_target_runs_render_then_validate(
     assert run_streaming_mock.call_args_list[0].kwargs.get("quiet") is True
     assert "rendered/" in validate_argv
     assert "Render Summary" in result.output
-    assert "✓ Render: OK (module.example)" in result.output
+    assert "✓ Render: OK (module.example -> rendered/)" in result.output
     assert "─" * 80 in result.output
 
 
@@ -217,6 +219,7 @@ def test_validate_render_step_streams_live_at_info_verbosity_or_above(
         tmp_path,
         "render:\n  target: module.example\n  output: rendered/\n",
     )
+    (tmp_path / "rendered").mkdir()
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=0
     )
@@ -236,6 +239,7 @@ def test_validate_honors_global_no_color_flag(tmp_path, mocker, _tofu_on_path):
         tmp_path,
         "render:\n  target: module.example\n  output: rendered/\n",
     )
+    (tmp_path / "rendered").mkdir()
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=0
     )
@@ -253,7 +257,7 @@ def test_validate_honors_global_no_color_flag(tmp_path, mocker, _tofu_on_path):
     ]
     validate_env = run_streaming_mock.call_args_list[1].kwargs["env"]
     assert validate_env["NO_COLOR"] == "1"
-    assert "Render: OK (module.example)" in result.output
+    assert "Render: OK (module.example -> rendered/)" in result.output
 
 
 @pytest.mark.unit
@@ -262,6 +266,7 @@ def test_validate_aborts_when_render_step_fails(tmp_path, mocker, _tofu_on_path)
         tmp_path,
         "render:\n  target: module.example\n  output: rendered/\n",
     )
+    (tmp_path / "rendered").mkdir()
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=1
     )
@@ -309,6 +314,7 @@ def test_validate_with_artifacts_and_render_appends_second_call(
         tmp_path,
         "render:\n  target: module.example\n  output: rendered/\n",
     )
+    (tmp_path / "rendered").mkdir()
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=0
     )
@@ -332,6 +338,7 @@ def test_validate_with_artifacts_render_failure_only_logs_render_call(
         tmp_path,
         "render:\n  target: module.example\n  output: rendered/\n",
     )
+    (tmp_path / "rendered").mkdir()
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=1
     )
@@ -1034,3 +1041,78 @@ def test_tool_artifacts_env_override_is_kept(
 
     assert result.exit_code == 0
     assert run_streaming_mock.call_args.kwargs["env"][env_var] == "false"
+
+
+# ---------------------------------------------------------------------------
+# Module defaults from the manifest `config`
+# ---------------------------------------------------------------------------
+
+_CONFIG_MANIFEST = """\
+schema: 1
+config:
+  render:
+    resource: local_sensitive_file.model
+    output: model.yaml
+  env:
+    required: [NXOS_USERNAME]
+"""
+
+
+@pytest.mark.unit
+def test_validate_uses_render_target_from_module_manifest(
+    tmp_path, mocker, _tofu_on_path, write_module
+):
+    write_module(tmp_path, manifest=_CONFIG_MANIFEST, key="fabric")
+    config_path = _write_config(tmp_path, "")
+    (tmp_path / "model.yaml").write_text("nxos: {}\n")
+    run_streaming_mock = mocker.patch(
+        "nac.cli.validate.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "validate"])
+
+    assert result.exit_code == 0, result.output
+    render_argv = run_streaming_mock.call_args_list[0].args[0]
+    validate_argv = run_streaming_mock.call_args_list[1].args[0]
+    assert "-target=module.fabric.local_sensitive_file.model" in render_argv
+    assert "model.yaml" in validate_argv
+
+
+@pytest.mark.unit
+def test_validate_project_render_null_overrides_module_manifest(
+    tmp_path, mocker, _tofu_on_path, write_module
+):
+    write_module(tmp_path, manifest=_CONFIG_MANIFEST)
+    config_path = _write_config(tmp_path, "render: null\n")
+    run_streaming_mock = mocker.patch(
+        "nac.cli.validate.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "validate"])
+
+    assert result.exit_code == 0, result.output
+    assert run_streaming_mock.call_count == 1
+
+
+@pytest.mark.unit
+def test_validate_fails_when_render_step_does_not_write_output(
+    tmp_path, mocker, _tofu_on_path
+):
+    config_path = _write_config(
+        tmp_path,
+        "render:\n  target: module.nxos.local_sensitive_file.model\n"
+        "  output: model.yaml\n",
+    )
+    run_streaming_mock = mocker.patch(
+        "nac.cli.validate.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "validate"])
+
+    assert result.exit_code == 1
+    assert run_streaming_mock.call_count == 1  # nac-validate never runs
+    assert (
+        "Render step `module.nxos.local_sensitive_file.model` did not write "
+        "`model.yaml`" in result.output
+    )
+    assert "write_model_file" in result.output

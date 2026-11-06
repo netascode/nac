@@ -19,7 +19,7 @@ from nac.manifest import MANIFEST_FILE
 from nac.output import apply_no_color_env, echo_summary, format_command
 from nac.tools import ToolSource
 
-from .main import app, fail, get_config, get_no_color
+from .main import MODULE_DEFAULTS_META_KEY, app, fail, get_config, get_no_color
 from .options import Prewarm, Yes
 from .versions import emit_warnings, get_manifest, tool_warnings
 
@@ -114,7 +114,14 @@ def setup(ctx: typer.Context, yes: Yes = False, prewarm: Prewarm = False) -> Non
 
     manifest = get_manifest(ctx, cfg)
     if manifest is not None:
-        lines.append(f"tested versions: {manifest.module} ({MANIFEST_FILE})")
+        if manifest.tools:
+            lines.append(f"tested versions: {manifest.module} ({MANIFEST_FILE})")
+        module_defaults = ctx.meta.get(MODULE_DEFAULTS_META_KEY) or []
+        if module_defaults:
+            lines.append(
+                f"module defaults: {', '.join(module_defaults)} "
+                f"(from {manifest.module})"
+            )
 
     missing_env = [name for name in cfg.env.required if name not in os.environ]
     if missing_env:

@@ -399,3 +399,49 @@ def test_setup_fails_without_uv_when_a_tool_needs_uvx(tmp_path, mocker):
     )
     assert "install nac-test>=0.9,<1.0 yourself" in result.output
     assert "nac-validate" not in result.output
+
+
+_CONFIG_MANIFEST = """\
+schema: 1
+config:
+  env:
+    required: [NXOS_USERNAME]
+"""
+
+
+@pytest.mark.unit
+def test_required_env_from_module_manifest_is_checked(
+    tmp_path, mocker, monkeypatch, write_module
+):
+    monkeypatch.delenv("NXOS_USERNAME", raising=False)
+    write_module(tmp_path, manifest=_CONFIG_MANIFEST)
+    config_path = _write_config(tmp_path, "")
+    mocker.patch(
+        "shutil.which",
+        side_effect=_which({"uv": "/usr/bin/uv", "tofu": "/usr/bin/tofu"}),
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "setup"])
+
+    assert result.exit_code != 0
+    assert "Missing required environment variable(s): NXOS_USERNAME" in result.output
+
+
+@pytest.mark.unit
+def test_setup_reports_module_defaults(tmp_path, mocker, monkeypatch, write_module):
+    monkeypatch.setenv("NXOS_USERNAME", "admin")
+    write_module(tmp_path, manifest=_CONFIG_MANIFEST)
+    config_path = _write_config(tmp_path, "")
+    mocker.patch(
+        "shutil.which",
+        side_effect=_which({"uv": "/usr/bin/uv", "tofu": "/usr/bin/tofu"}),
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "setup"])
+
+    assert result.exit_code == 0, result.output
+    assert (
+        "module defaults: env.required (from netascode/nac-nxos/nxos 0.3.0)"
+        in result.output
+    )
+    assert "tested versions" not in result.output

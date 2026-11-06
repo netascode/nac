@@ -183,6 +183,7 @@ def test_validate_with_render_artifacts_keep_warnings_first(
         "render:\n  target: module.nxos.model\n  output: model.yaml\n"
         "tools:\n  nac_validate: 1.2.0\n",
     )
+    (tmp_path / "model.yaml").write_text("nxos: {}\n")
     run_streaming_mock = mocker.patch(
         "nac.cli.validate.runner.run_streaming", return_value=0
     )

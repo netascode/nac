@@ -18,6 +18,7 @@ from nac.config import (
     _apply_filesystem_defaults,
     _format_validation_error,
     load_config,
+    merge_defaults,
     resolve_test_data,
     resolve_validate_data,
 )
@@ -360,3 +361,69 @@ def test_defaults_via_minimal_fixture() -> None:
     assert cfg.tools.terraform.version is None
     assert cfg.tools.nac_validate is None
     assert cfg.tools.nac_test is None
+
+
+# ---------------------------------------------------------------------------
+# Module defaults (manifest `config`)
+# ---------------------------------------------------------------------------
+
+MODULE_DEFAULTS = {
+    "render": {"target": "module.nxos.local_sensitive_file.model", "output": "m.yaml"},
+    "env": {"required": ["NXOS_USERNAME"]},
+}
+
+
+def test_merge_defaults_fills_missing_keys() -> None:
+    merged, applied = merge_defaults({}, MODULE_DEFAULTS)
+
+    assert merged == MODULE_DEFAULTS
+    assert applied == ["render.target", "render.output", "env.required"]
+
+
+def test_merge_defaults_project_values_win_per_key() -> None:
+    merged, applied = merge_defaults(
+        {"render": {"output": "mine.yaml"}, "env": {"required": ["X"]}},
+        MODULE_DEFAULTS,
+    )
+
+    assert merged == {
+        "render": {
+            "output": "mine.yaml",
+            "target": "module.nxos.local_sensitive_file.model",
+        },
+        "env": {"required": ["X"]},
+    }
+    assert applied == ["render.target"]
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [{"render": None}, {"render": {"target": None, "output": None}}],
+)
+def test_merge_defaults_explicit_null_disables(raw) -> None:
+    merged, applied = merge_defaults(raw, {"render": MODULE_DEFAULTS["render"]})
+
+    assert merged == raw
+    assert applied == []
+
+
+def test_merge_defaults_does_not_mutate_inputs() -> None:
+    raw = {"render": {"output": "mine.yaml"}}
+
+    merge_defaults(raw, MODULE_DEFAULTS)
+
+    assert raw == {"render": {"output": "mine.yaml"}}
+    assert MODULE_DEFAULTS["render"]["output"] == "m.yaml"
+
+
+def test_load_config_with_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "nac.yaml"
+    path.write_text("tools:\n  terraform:\n    engine: tofu\n")
+
+    cfg = load_config(path, defaults=MODULE_DEFAULTS)
+
+    assert cfg.render == RenderConfig(
+        target="module.nxos.local_sensitive_file.model", output="m.yaml"
+    )
+    assert cfg.env.required == ["NXOS_USERNAME"]
+    assert cfg.tools.terraform.engine == "tofu"

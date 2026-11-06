@@ -1,29 +1,36 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2026 Daniel Schmidt
 
-"""Tested-versions manifest shipped with a Network-as-Code Terraform module.
+"""Manifest shipped with a Network-as-Code Terraform module.
 
 A module may ship a `nac/manifest.yaml` (next to the rest of its nac-specific
-content: schema, rules, test templates) listing the nac-validate/nac-test
-versions it was tested with. terraform/tofu and provider versions are not
-part of it: the module's `versions.tf` already constrains those, and
-Terraform enforces them itself. After `terraform init`, `nac` finds it via
-`.terraform/modules/modules.json` and uses it purely as a hint: versions
-outside the tested, semver-compatible range produce a warning, never an
-error. A missing or unreadable manifest is silently ignored.
+content: schema, rules, test templates) with:
+
+- `tools`: the nac-validate/nac-test versions it was tested with.
+  terraform/tofu and provider versions are not part of it: the module's
+  `versions.tf` already constrains those, and Terraform enforces them
+  itself. Versions outside the tested, semver-compatible range produce a
+  warning, never an error.
+- `config`: module-specific `nac.yaml` defaults (render target, required
+  environment variables), so that projects using the module don't have to
+  repeat them. The project's own `nac.yaml` always takes precedence.
+
+After `terraform init`, `nac` finds it via `.terraform/modules/modules.json`.
+A missing or unreadable manifest is silently ignored; an invalid `config`
+section is ignored with a warning, keeping the rest of the manifest.
 """
 
 import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pydantic
 import ruamel.yaml
 from packaging.specifiers import SpecifierSet
 from packaging.version import InvalidVersion, Version
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +45,54 @@ class _ManifestFile(BaseModel):
 
     schema_version: Literal[1] = pydantic.Field(alias="schema")
     tools: dict[str, str] = {}
+    # Validated separately (_ManifestConfig) so that a broken `config`
+    # section doesn't also discard the tested versions.
+    config: object = None
+
+
+class _RenderDefaults(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    # Resource address relative to the module, e.g.
+    # `local_sensitive_file.model`; nac prefixes the module's own address.
+    resource: str | None = None
+    output: str | None = None
+
+    @field_validator("resource")
+    @classmethod
+    def _relative_address(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or value.startswith("module.")):
+            raise ValueError(
+                "must be a resource address relative to the module, "
+                "e.g. `local_sensitive_file.model`"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _resource_requires_output(self) -> "_RenderDefaults":
+        if self.resource is not None and self.output is None:
+            raise ValueError("render.output must be set when render.resource is set")
+        return self
+
+
+class _EnvDefaults(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    required: list[str] | None = None
+
+
+class _ManifestConfig(BaseModel):
+    """`nac.yaml` defaults a module may provide.
+
+    Deliberately limited to module-specific settings; anything about the
+    project's layout or toolchain (working_dir, data paths, terraform
+    engine, ...) stays with the project's own `nac.yaml`.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    render: _RenderDefaults | None = None
+    env: _EnvDefaults | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +105,10 @@ class Manifest:
 
     module: str
     tools: dict[str, str] = field(default_factory=dict)
+    # `nac.yaml`-shaped defaults (see config.merge_defaults), already
+    # resolved against the module's address, e.g.
+    # {"render": {"target": "module.nxos.local_sensitive_file.model", ...}}
+    config: dict[str, Any] = field(default_factory=dict)
 
     def check_tool(self, name: str, actual: str | None) -> str | None:
         """Warning message if `actual` is outside the tested range, else None."""
@@ -129,7 +188,9 @@ def load_manifest(working_dir: Path) -> Manifest | None:
     for module in candidates:
         path = working_dir / str(module["Dir"]) / MANIFEST_FILE
         if path.is_file():
-            manifest = _parse_manifest(path, _module_label(module))
+            manifest = _parse_manifest(
+                path, _module_label(module), _module_address(str(module["Key"]))
+            )
             if manifest is not None:
                 return manifest
     return None
@@ -144,7 +205,15 @@ def _module_label(module: dict[str, object]) -> str:
     return f"module.{module['Key']}"
 
 
-def _parse_manifest(path: Path, label: str) -> Manifest | None:
+def _module_address(key: str) -> str:
+    """Terraform address of a module from its modules.json key.
+
+    `nxos` -> `module.nxos`, `wrapper.nxos` -> `module.wrapper.module.nxos`.
+    """
+    return ".".join(f"module.{part}" for part in key.split("."))
+
+
+def _parse_manifest(path: Path, label: str, address: str) -> Manifest | None:
     yaml = ruamel.yaml.YAML(typ="safe")
     try:
         with path.open("r", encoding="utf-8") as fh:
@@ -152,4 +221,36 @@ def _parse_manifest(path: Path, label: str) -> Manifest | None:
     except (OSError, ruamel.yaml.YAMLError, pydantic.ValidationError) as exc:
         logger.debug("Ignoring unreadable manifest %s: %s", path, exc)
         return None
-    return Manifest(module=label, tools=dict(data.tools))
+    return Manifest(
+        module=label,
+        tools=dict(data.tools),
+        config=_parse_config(data.config, path, address),
+    )
+
+
+def _parse_config(raw: object, path: Path, address: str) -> dict[str, Any]:
+    """Translate the manifest's `config` into `nac.yaml`-shaped defaults."""
+    if raw is None:
+        return {}
+    try:
+        config = _ManifestConfig.model_validate(raw)
+    except pydantic.ValidationError as exc:
+        details = "; ".join(
+            f"{'.'.join(str(p) for p in err['loc']) or '<root>'}: {err['msg']}"
+            for err in exc.errors()
+        )
+        logger.warning("Ignoring invalid `config` in %s: %s", path, details)
+        return {}
+
+    result: dict[str, Any] = {}
+    if config.render is not None:
+        render: dict[str, Any] = {}
+        if config.render.resource is not None:
+            render["target"] = f"{address}.{config.render.resource}"
+        if config.render.output is not None:
+            render["output"] = config.render.output
+        if render:
+            result["render"] = render
+    if config.env is not None and config.env.required is not None:
+        result["env"] = {"required": list(config.env.required)}
+    return result
