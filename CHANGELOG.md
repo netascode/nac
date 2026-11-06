@@ -1,4 +1,4 @@
-## Unreleased
+## 0.2.1
 
 - Read `nac.yaml` defaults from a `config` section in the module's `nac/manifest.yaml`: `render.resource` (relative to the module, e.g. `local_sensitive_file.model` becomes `module.nxos.local_sensitive_file.model`), `render.output` and `env.required`. Settings in the project's `nac.yaml` take precedence key by key, an explicit `null` turns a default off, and an invalid `config` section is ignored with a warning; `nac setup` lists the defaults taken from the module
 - Fail `nac validate` with a clear message if the render step didn't write `render.output` (e.g. because it doesn't match the module's `write_model_file`), and show the output path in the Render Summary
