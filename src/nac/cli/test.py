@@ -8,7 +8,7 @@ import typer
 from nac import runner, tools
 from nac.exceptions import UvNotFoundError
 
-from .main import app, fail, get_config, get_no_color
+from .main import app, fail, get_config, get_no_color, require_env
 from .options import Artifacts
 from .passthrough import (
     PASSTHROUGH_CONTEXT_SETTINGS,
@@ -56,6 +56,8 @@ def test_(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             tool_label="nac-test",
             usage_as="nac test",
         )
+
+    require_env(cfg)
 
     warnings = tool_warnings(manifest, "nac-test", cfg.tools.nac_test)
     log_written = emit_warnings(warnings, no_color=no_color, log_path=log_path)

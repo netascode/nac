@@ -7,7 +7,7 @@ import typer
 
 from nac import runner, terraform
 
-from .main import app, get_config, get_no_color, resolve_engine_or_exit
+from .main import app, get_config, get_no_color, require_env, resolve_engine_or_exit
 from .options import Artifacts
 from .passthrough import (
     PASSTHROUGH_CONTEXT_SETTINGS,
@@ -42,6 +42,8 @@ def plan(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             tool_label=f"{engine} plan",
             usage_as="nac plan",
         )
+
+    require_env(cfg)
 
     code = runner.run_streaming(
         terraform.build_plan_argv(binary, no_color=no_color) + ctx.args,

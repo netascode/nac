@@ -4,7 +4,6 @@
 """`nac setup` -- verify prerequisites and report resolved tool versions."""
 
 import logging
-import os
 import shutil
 import subprocess
 import sys
@@ -19,7 +18,14 @@ from nac.manifest import MANIFEST_FILE
 from nac.output import apply_no_color_env, echo_summary, format_command
 from nac.tools import ToolSource
 
-from .main import MODULE_DEFAULTS_META_KEY, app, fail, get_config, get_no_color
+from .main import (
+    MODULE_DEFAULTS_META_KEY,
+    app,
+    fail,
+    get_config,
+    get_no_color,
+    require_env,
+)
 from .options import Prewarm, Yes
 from .versions import emit_warnings, get_manifest, tool_warnings
 
@@ -123,9 +129,7 @@ def setup(ctx: typer.Context, yes: Yes = False, prewarm: Prewarm = False) -> Non
                 f"(from {manifest.module})"
             )
 
-    missing_env = [name for name in cfg.env.required if name not in os.environ]
-    if missing_env:
-        fail("Missing required environment variable(s): " + ", ".join(missing_env))
+    require_env(cfg)
     if cfg.env.required:
         lines.append("env.required: all present (" + ", ".join(cfg.env.required) + ")")
 

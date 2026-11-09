@@ -83,6 +83,23 @@ def get_config(ctx: typer.Context) -> NacConfig:
     return cfg
 
 
+def missing_env(cfg: NacConfig) -> list[str]:
+    """Names in `env.required` that aren't set in the environment."""
+    return [name for name in cfg.env.required if name not in os.environ]
+
+
+def require_env(cfg: NacConfig) -> None:
+    """Fail cleanly if a variable in `env.required` isn't set.
+
+    Checked by `nac setup` and again by the commands that need them
+    (plan/apply/destroy/test), as `env.required` may only become known
+    from the module's manifest after `nac init`. Values are never printed.
+    """
+    missing = missing_env(cfg)
+    if missing:
+        fail("Missing required environment variable(s): " + ", ".join(missing))
+
+
 def resolve_engine_or_exit(cfg: NacConfig) -> tuple[str, str]:
     """Resolve the terraform/tofu binary, failing cleanly on any error.
 

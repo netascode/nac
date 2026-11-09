@@ -1116,3 +1116,96 @@ def test_validate_fails_when_render_step_does_not_write_output(
         "`model.yaml`" in result.output
     )
     assert "write_model_file" in result.output
+
+
+# ---------------------------------------------------------------------------
+# env.required checked by the commands that need it
+# ---------------------------------------------------------------------------
+
+_ENV_COMMANDS = ["plan", "apply", "destroy", "test"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("command", _ENV_COMMANDS)
+def test_command_fails_on_missing_required_env(
+    tmp_path, mocker, monkeypatch, _tofu_on_path, command
+):
+    monkeypatch.delenv("NAC_TEST_USERNAME", raising=False)
+    monkeypatch.setenv("NAC_TEST_PASSWORD", "secret")
+    config_path = _write_config(
+        tmp_path, "env:\n  required: [NAC_TEST_USERNAME, NAC_TEST_PASSWORD]\n"
+    )
+    run_streaming_mock = mocker.patch(f"nac.cli.{command}.runner.run_streaming")
+
+    result = cli.invoke(app, ["--config", str(config_path), command])
+
+    assert result.exit_code == 1
+    assert (
+        "Missing required environment variable(s): NAC_TEST_USERNAME" in result.output
+    )
+    assert "secret" not in result.output
+    run_streaming_mock.assert_not_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("command", _ENV_COMMANDS)
+def test_command_runs_when_required_env_is_set(
+    tmp_path, mocker, monkeypatch, _tofu_on_path, command
+):
+    monkeypatch.setenv("NAC_TEST_USERNAME", "admin")
+    config_path = _write_config(tmp_path, "env:\n  required: [NAC_TEST_USERNAME]\n")
+    run_streaming_mock = mocker.patch(
+        f"nac.cli.{command}.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), command])
+
+    assert result.exit_code == 0, result.output
+    run_streaming_mock.assert_called()
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("command", _ENV_COMMANDS)
+def test_command_checks_required_env_from_module_manifest(
+    tmp_path, mocker, monkeypatch, _tofu_on_path, write_module, command
+):
+    monkeypatch.delenv("NXOS_USERNAME", raising=False)
+    write_module(tmp_path, manifest=_CONFIG_MANIFEST)
+    config_path = _write_config(tmp_path, "")
+    run_streaming_mock = mocker.patch(f"nac.cli.{command}.runner.run_streaming")
+
+    result = cli.invoke(app, ["--config", str(config_path), command])
+
+    assert result.exit_code == 1
+    assert "Missing required environment variable(s): NXOS_USERNAME" in result.output
+    run_streaming_mock.assert_not_called()
+
+
+@pytest.mark.unit
+def test_validate_does_not_check_required_env(
+    tmp_path, mocker, monkeypatch, _tofu_on_path
+):
+    monkeypatch.delenv("NAC_TEST_USERNAME", raising=False)
+    config_path = _write_config(tmp_path, "env:\n  required: [NAC_TEST_USERNAME]\n")
+    mocker.patch("nac.cli.validate.runner.run_streaming", return_value=0)
+
+    result = cli.invoke(app, ["--config", str(config_path), "validate"])
+
+    assert result.exit_code == 0, result.output
+
+
+@pytest.mark.unit
+def test_help_works_without_required_env(tmp_path, mocker, monkeypatch, _tofu_on_path):
+    monkeypatch.delenv("NAC_TEST_USERNAME", raising=False)
+    config_path = _write_config(tmp_path, "env:\n  required: [NAC_TEST_USERNAME]\n")
+    mocker.patch(
+        "nac.cli.passthrough.subprocess.run",
+        return_value=subprocess.CompletedProcess(
+            [], 0, stdout="Usage: tofu [global options] plan [options]\n"
+        ),
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "plan", "--help"])
+
+    assert result.exit_code == 0
+    assert "Missing required" not in result.output

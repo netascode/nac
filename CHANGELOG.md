@@ -1,3 +1,7 @@
+## Unreleased
+
+- Check `env.required` also in `nac plan`, `nac apply`, `nac destroy` and `nac test`, not only in `nac setup`, and fail before running the wrapped tool if a variable isn't set; this covers required variables that only become known from the module's manifest after `nac init`. `nac init` and `nac validate` don't check them, as they don't connect to devices
+
 ## 0.2.1
 
 - Read `nac.yaml` defaults from a `config` section in the module's `nac/manifest.yaml`: `render.resource` (relative to the module, e.g. `local_sensitive_file.model` becomes `module.nxos.local_sensitive_file.model`), `render.output` and `env.required`. Settings in the project's `nac.yaml` take precedence key by key, an explicit `null` turns a default off, and an invalid `config` section is ignored with a warning; `nac setup` lists the defaults taken from the module

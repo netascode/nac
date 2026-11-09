@@ -7,7 +7,7 @@ import typer
 
 from nac import runner, terraform
 
-from .main import app, get_config, get_no_color, resolve_engine_or_exit
+from .main import app, get_config, get_no_color, require_env, resolve_engine_or_exit
 from .options import Artifacts, AutoApprove
 from .passthrough import (
     PASSTHROUGH_CONTEXT_SETTINGS,
@@ -45,6 +45,8 @@ def apply(
             tool_label=f"{engine} apply",
             usage_as="nac apply",
         )
+
+    require_env(cfg)
 
     plan_file = cfg.working_dir / terraform.DEFAULT_PLAN_FILE
     used_plan_file = plan_file.is_file()
