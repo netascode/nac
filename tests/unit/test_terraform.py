@@ -3,6 +3,9 @@
 
 """Unit tests for nac.terraform."""
 
+import subprocess
+import sys
+
 import pytest
 
 from nac.config import TerraformToolConfig
@@ -394,30 +397,44 @@ class TestBuildDestroyArgv:
 
 @pytest.mark.unit
 class TestEngineUsable:
-    def _script(self, tmp_path, body: str) -> str:
-        path = tmp_path / "engine"
-        path.write_text(f"#!/bin/sh\n{body}\n")
-        path.chmod(0o755)
-        return str(path)
+    def _mock_run(self, mocker, **kwargs):
+        return mocker.patch(
+            "nac.terraform.subprocess.run",
+            return_value=subprocess.CompletedProcess([], **kwargs),
+        )
 
-    def test_succeeds(self, tmp_path):
-        assert _engine_usable(self._script(tmp_path, "exit 0")) is True
+    def test_succeeds(self, mocker):
+        self._mock_run(mocker, returncode=0)
+        assert _engine_usable("/usr/bin/tofu") is True
 
-    def test_fails(self, tmp_path):
-        assert _engine_usable(self._script(tmp_path, "exit 42")) is False
+    def test_fails(self, mocker):
+        self._mock_run(mocker, returncode=42)
+        assert _engine_usable("/usr/bin/tofu") is False
+
+    def test_runs_version_without_auto_install(self, mocker, monkeypatch):
+        monkeypatch.setenv("TENV_AUTO_INSTALL", "true")
+        run = self._mock_run(mocker, returncode=0)
+
+        _engine_usable("/usr/bin/tofu")
+
+        argv = run.call_args.args[0]
+        env = run.call_args.kwargs["env"]
+        assert argv == ["/usr/bin/tofu", "version"]
+        assert env["TENV_AUTO_INSTALL"] == "false"
+        assert env[TOFU_AUTO_INSTALL_ENV] == "false"
+        assert env[TERRAFORM_AUTO_INSTALL_ENV] == "false"
+        assert env["CHECKPOINT_DISABLE"] == "1"
+
+    def test_timeout(self, mocker):
+        mocker.patch(
+            "nac.terraform.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="tofu", timeout=30),
+        )
+        assert _engine_usable("/usr/bin/tofu") is False
 
     def test_missing_binary(self, tmp_path):
         assert _engine_usable(str(tmp_path / "missing")) is False
 
-    def test_disables_auto_install(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("TENV_AUTO_INSTALL", "true")
-        script = self._script(
-            tmp_path,
-            '[ "$1" = version ] && [ "$TENV_AUTO_INSTALL" = false ] '
-            '&& [ "$TOFUENV_AUTO_INSTALL" = false ] && [ "$TFENV_AUTO_INSTALL" = false ]',
-        )
-        assert _engine_usable(script) is True
-
-    def test_timeout(self, tmp_path, mocker):
-        mocker.patch("nac.terraform.PROBE_TIMEOUT_SECONDS", 0.2)
-        assert _engine_usable(self._script(tmp_path, "sleep 5")) is False
+    def test_real_failing_binary(self):
+        """`python version` exits non-zero (no such script) on every OS."""
+        assert _engine_usable(sys.executable) is False
