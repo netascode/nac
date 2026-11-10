@@ -20,6 +20,10 @@ from pathlib import Path
 
 import pytest
 
+from nac.config import TerraformToolConfig
+from nac.exceptions import NoEngineAvailableError
+from nac.terraform import resolve_engine_binary
+
 pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(
@@ -46,10 +50,13 @@ def _tf_env() -> dict[str, str]:
 
 
 def _detect_engine() -> str:
-    """Prefer tofu, falling back to terraform, matching nac's own default."""
-    if shutil.which("tofu") is not None:
-        return "tofu"
-    return "terraform"
+    """Use the engine nac's own auto-detection picks (tofu before terraform,
+    skipping a binary that doesn't run, e.g. a version manager shim)."""
+    try:
+        engine, _ = resolve_engine_binary(TerraformToolConfig())
+    except NoEngineAvailableError:
+        pytest.skip("no usable tofu or terraform on PATH")
+    return engine
 
 
 def _write_nac_yaml(tmp_path: Path, engine: str) -> Path:

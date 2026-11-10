@@ -17,6 +17,14 @@ tools:
 WriteModule = Callable[..., Path]
 
 
+@pytest.fixture(autouse=True)
+def _engine_usable(mocker):
+    """Treat every terraform/tofu found on PATH as usable, so tests faking
+    `shutil.which` don't execute the fake paths. Tests of the probe itself
+    import `_engine_usable` directly and so still get the real function."""
+    mocker.patch("nac.terraform._engine_usable", return_value=True)
+
+
 @pytest.fixture
 def write_module() -> WriteModule:
     """Factory faking an initialized module (as `terraform init` leaves it)
