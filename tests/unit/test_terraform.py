@@ -3,6 +3,9 @@
 
 """Unit tests for nac.terraform."""
 
+import subprocess
+import sys
+
 import pytest
 
 from nac.config import TerraformToolConfig
@@ -13,6 +16,7 @@ from nac.terraform import (
     TERRAFORM_VERSION_ENV,
     TOFU_AUTO_INSTALL_ENV,
     TOFU_VERSION_ENV,
+    _engine_usable,
     build_apply_argv,
     build_destroy_argv,
     build_engine_env,
@@ -106,6 +110,83 @@ class TestResolveEngineBinary:
 
         assert engine == "tofu"
         assert path == str(cached_path)
+
+    def test_none_skips_unusable_tofu(self, mocker):
+        """A tofu shim without an installed version (e.g. tenv's) is skipped."""
+        mocker.patch(
+            "nac.terraform.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        )
+        mocker.patch(
+            "nac.terraform._engine_usable",
+            side_effect=lambda path: path != "/usr/bin/tofu",
+        )
+        cfg = TerraformToolConfig(engine=None)
+
+        engine, path = resolve_engine_binary(cfg)
+
+        assert engine == "terraform"
+        assert path == "/usr/bin/terraform"
+
+    def test_none_all_unusable_falls_back_to_bootstrap_cache(self, mocker, tmp_path):
+        mocker.patch(
+            "nac.terraform.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        )
+        mocker.patch("nac.terraform._engine_usable", return_value=False)
+        cached_path = tmp_path / "bin" / "tofu" / "1.9.5" / "tofu"
+        mocker.patch(
+            "nac.terraform.bootstrap.find_cached_binary", return_value=cached_path
+        )
+        cfg = TerraformToolConfig(engine=None)
+
+        engine, path = resolve_engine_binary(cfg)
+
+        assert engine == "tofu"
+        assert path == str(cached_path)
+
+    def test_none_all_unusable_names_them_in_error(self, mocker):
+        mocker.patch(
+            "nac.terraform.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        )
+        mocker.patch("nac.terraform._engine_usable", return_value=False)
+        mocker.patch("nac.terraform.bootstrap.find_cached_binary", return_value=None)
+        cfg = TerraformToolConfig(engine=None)
+
+        with pytest.raises(
+            NoEngineAvailableError, match=r"/usr/bin/tofu.*/usr/bin/terraform"
+        ):
+            resolve_engine_binary(cfg)
+
+    def test_none_with_pinned_version_does_not_probe(self, mocker):
+        """With a pinned version, tenv installs it on first use, so the
+        not-yet-installed shim must not be rejected."""
+        mocker.patch(
+            "nac.terraform.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        )
+        probe = mocker.patch("nac.terraform._engine_usable", return_value=False)
+        cfg = TerraformToolConfig(engine=None, version="1.9.0")
+
+        engine, path = resolve_engine_binary(cfg)
+
+        assert engine == "tofu"
+        assert path == "/usr/bin/tofu"
+        probe.assert_not_called()
+
+    def test_explicit_engine_does_not_probe(self, mocker):
+        mocker.patch(
+            "nac.terraform.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        )
+        probe = mocker.patch("nac.terraform._engine_usable", return_value=False)
+        cfg = TerraformToolConfig(engine="tofu")
+
+        engine, _ = resolve_engine_binary(cfg)
+
+        assert engine == "tofu"
+        probe.assert_not_called()
 
     def test_explicit_engine_never_consults_bootstrap_cache(self, mocker, tmp_path):
         """An explicit engine is a hard requirement -- no bootstrap fallback."""
@@ -312,3 +393,48 @@ class TestBuildDestroyArgv:
         argv = build_destroy_argv("tofu", auto_approve=True, no_color=True)
 
         assert argv == ["tofu", "destroy", "-no-color", "-auto-approve"]
+
+
+@pytest.mark.unit
+class TestEngineUsable:
+    def _mock_run(self, mocker, **kwargs):
+        return mocker.patch(
+            "nac.terraform.subprocess.run",
+            return_value=subprocess.CompletedProcess([], **kwargs),
+        )
+
+    def test_succeeds(self, mocker):
+        self._mock_run(mocker, returncode=0)
+        assert _engine_usable("/usr/bin/tofu") is True
+
+    def test_fails(self, mocker):
+        self._mock_run(mocker, returncode=42)
+        assert _engine_usable("/usr/bin/tofu") is False
+
+    def test_runs_version_without_auto_install(self, mocker, monkeypatch):
+        monkeypatch.setenv("TENV_AUTO_INSTALL", "true")
+        run = self._mock_run(mocker, returncode=0)
+
+        _engine_usable("/usr/bin/tofu")
+
+        argv = run.call_args.args[0]
+        env = run.call_args.kwargs["env"]
+        assert argv == ["/usr/bin/tofu", "version"]
+        assert env["TENV_AUTO_INSTALL"] == "false"
+        assert env[TOFU_AUTO_INSTALL_ENV] == "false"
+        assert env[TERRAFORM_AUTO_INSTALL_ENV] == "false"
+        assert env["CHECKPOINT_DISABLE"] == "1"
+
+    def test_timeout(self, mocker):
+        mocker.patch(
+            "nac.terraform.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(cmd="tofu", timeout=30),
+        )
+        assert _engine_usable("/usr/bin/tofu") is False
+
+    def test_missing_binary(self, tmp_path):
+        assert _engine_usable(str(tmp_path / "missing")) is False
+
+    def test_real_failing_binary(self):
+        """`python version` exits non-zero (no such script) on every OS."""
+        assert _engine_usable(sys.executable) is False
