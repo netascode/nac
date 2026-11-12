@@ -55,11 +55,16 @@ def plan(ctx: typer.Context, artifacts: Artifacts = False) -> None:
         raise typer.Exit(code=code)
 
     if artifacts:
+        # The `show` calls only produce the artifact files: the plan was
+        # already printed by the `plan` run above, so streaming them too
+        # would print it a second time and dump the whole JSON. quiet still
+        # surfaces their output if they fail.
         code = runner.run_streaming(
             terraform.build_show_text_argv(binary, no_color=no_color),
             cwd=cfg.working_dir,
             env=env,
             log_path=cfg.working_dir / "plan.txt",
+            quiet=True,
             no_color=no_color,
         )
         if code != 0:
@@ -70,6 +75,7 @@ def plan(ctx: typer.Context, artifacts: Artifacts = False) -> None:
             cwd=cfg.working_dir,
             env=env,
             log_path=cfg.working_dir / "plan.json",
+            quiet=True,
             no_color=no_color,
         )
         if code != 0:

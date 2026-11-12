@@ -390,6 +390,10 @@ def test_plan_with_artifacts_runs_plan_then_both_show_commands(
     assert text_call.kwargs["log_path"] == tmp_path / "plan.txt"
     assert json_call.kwargs["log_path"] == tmp_path / "plan.json"
     assert "-json" in json_call.args[0]
+    # The plan run streams to the console; the show calls only write files.
+    assert not run_streaming_mock.call_args_list[0].kwargs.get("quiet", False)
+    assert text_call.kwargs["quiet"] is True
+    assert json_call.kwargs["quiet"] is True
 
 
 @pytest.mark.unit

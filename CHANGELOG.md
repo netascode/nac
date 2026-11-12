@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Don't print the output of the `show` calls that `nac plan --artifacts` uses to write `plan.txt` and `plan.json`, so the plan is no longer printed twice followed by the whole JSON; their output is still shown if they fail
 - Skip a `tofu`/`terraform` on `PATH` that doesn't run when auto-detecting the engine (no `tools.terraform.engine` and no `tools.terraform.version`), e.g. a version manager shim such as tenv's after its last version was uninstalled, and fall back to the other binary or the bootstrap-installed `tofu`; the check runs `<binary> version` with auto-install disabled
 - Check `env.required` also in `nac plan`, `nac apply`, `nac destroy` and `nac test`, not only in `nac setup`, and fail before running the wrapped tool if a variable isn't set; this covers required variables that only become known from the module's manifest after `nac init`. `nac init` and `nac validate` don't check them, as they don't connect to devices
 
