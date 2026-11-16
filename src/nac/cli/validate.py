@@ -3,15 +3,12 @@
 
 """`nac validate` -- optional targeted render, then nac-validate."""
 
-import logging
-
 import typer
 
-from nac import runner, terraform, tools
+from nac import runner, tools
 from nac.exceptions import UvNotFoundError
-from nac.output import GREEN, color, echo_summary
 
-from .main import app, fail, get_config, get_no_color, resolve_engine_or_exit
+from .main import app, fail, get_config, get_no_color
 from .options import Artifacts
 from .passthrough import (
     PASSTHROUGH_CONTEXT_SETTINGS,
@@ -19,6 +16,7 @@ from .passthrough import (
     show_help_and_exit,
     wants_help,
 )
+from .render import run_render
 from .versions import emit_warnings, get_manifest, note_on_failure, tool_warnings
 
 
@@ -60,40 +58,9 @@ def validate(ctx: typer.Context, artifacts: Artifacts = False) -> None:
     warnings = tool_warnings(manifest, "nac-validate", cfg.tools.nac_validate)
     log_written = emit_warnings(warnings, no_color=no_color, log_path=log_path)
 
-    if cfg.render is not None and cfg.render.target is not None:
-        engine, binary = resolve_engine_or_exit(cfg)
-        env = terraform.build_engine_env(engine, cfg.tools.terraform.version)
-        quiet = not logging.getLogger().isEnabledFor(logging.INFO)
-        code = runner.run_streaming(
-            terraform.build_render_apply_argv(
-                binary, cfg.render.target, no_color=no_color
-            ),
-            cwd=cfg.working_dir,
-            env=env,
-            quiet=quiet,
-            log_path=log_path,
-            append=log_written,
-            no_color=no_color,
-        )
-        log_written = True
-        if code != 0:
-            raise typer.Exit(code=code)
-        output = cfg.render.output
-        if output is not None and not (cfg.working_dir / output).exists():
-            fail(
-                f"Render step `{cfg.render.target}` did not write `{output}`. "
-                "Check that `render.output` matches the file written by the "
-                "render target (for Network-as-Code modules: `write_model_file`)."
-            )
-        if quiet:
-            echo_summary(
-                "Render Summary",
-                [
-                    f"Render: {color(GREEN, 'OK', no_color=no_color)} "
-                    f"({cfg.render.target} -> {output})"
-                ],
-                no_color=no_color,
-            )
+    log_written = run_render(
+        cfg, no_color=no_color, log_path=log_path, append=log_written
+    )
 
     code = runner.run_streaming(
         tool_argv,

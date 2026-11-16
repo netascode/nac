@@ -59,6 +59,17 @@ Artifacts = Annotated[
     ),
 ]
 
+NoRender = Annotated[
+    bool,
+    typer.Option(
+        "--no-render",
+        help=(
+            "Skip the render step and test against the existing "
+            "`render.output` (e.g. one passed on from an earlier CI job)."
+        ),
+    ),
+]
+
 Yes = Annotated[
     bool,
     typer.Option(
@@ -106,6 +117,7 @@ __all__ = [
     "Artifacts",
     "ConfigPath",
     "NoColor",
+    "NoRender",
     "Prewarm",
     "Verbosity",
     "VerbosityLevel",

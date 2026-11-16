@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # Copyright (c) 2026 Daniel Schmidt
 
-"""`nac test` -- streams nac-test built from config."""
+"""`nac test` -- optional targeted render, then nac-test."""
 
 import typer
 
@@ -9,14 +9,20 @@ from nac import runner, tools
 from nac.exceptions import UvNotFoundError
 
 from .main import app, fail, get_config, get_no_color, require_env
-from .options import Artifacts
+from .options import Artifacts, NoRender
 from .passthrough import (
     PASSTHROUGH_CONTEXT_SETTINGS,
     PASSTHROUGH_OPTIONS_METAVAR,
     show_help_and_exit,
     wants_help,
 )
+from .render import render_enabled, run_render
 from .versions import emit_warnings, get_manifest, note_on_failure, tool_warnings
+
+_NO_RENDER_HINT = (
+    "To test against an existing `render.output` without rendering it, "
+    "use `nac test --no-render`."
+)
 
 
 @app.command(
@@ -24,8 +30,10 @@ from .versions import emit_warnings, get_manifest, note_on_failure, tool_warning
     context_settings=PASSTHROUGH_CONTEXT_SETTINGS,
     options_metavar=PASSTHROUGH_OPTIONS_METAVAR,
 )
-def test_(ctx: typer.Context, artifacts: Artifacts = False) -> None:
-    """Run nac-test against the configured data/templates/filters/output.
+def test_(
+    ctx: typer.Context, artifacts: Artifacts = False, no_render: NoRender = False
+) -> None:
+    """Render (if configured) then run nac-test against the configured data.
 
     Extra arguments are passed through to `nac-test`.
     """
@@ -61,6 +69,22 @@ def test_(ctx: typer.Context, artifacts: Artifacts = False) -> None:
 
     warnings = tool_warnings(manifest, "nac-test", cfg.tools.nac_test)
     log_written = emit_warnings(warnings, no_color=no_color, log_path=log_path)
+
+    if not no_render:
+        log_written = run_render(
+            cfg,
+            no_color=no_color,
+            log_path=log_path,
+            append=log_written,
+            engine_hint=_NO_RENDER_HINT,
+        )
+    elif render_enabled(cfg):
+        assert cfg.render is not None and cfg.render.output is not None
+        if not (cfg.working_dir / cfg.render.output).exists():
+            fail(
+                f"`render.output` `{cfg.render.output}` does not exist. Run "
+                "`nac test` without `--no-render` to render it first."
+            )
 
     code = runner.run_streaming(
         tool_argv,

@@ -20,6 +20,7 @@ from typer.testing import CliRunner
 
 from nac import __version__
 from nac.cli.main import app, run
+from nac.exceptions import NoEngineAvailableError
 from nac.output import strip_ansi
 from nac.terraform import DEFAULT_PLAN_FILE
 
@@ -689,6 +690,205 @@ def test_test_propagates_nonzero_exit_code(tmp_path, mocker):
     result = cli.invoke(app, ["--config", str(config_path), "test"])
 
     assert result.exit_code == 5
+
+
+_TEST_RENDER_CONFIG = "render:\n  target: module.example\n  output: model.yaml\n"
+
+
+@pytest.mark.unit
+def test_test_with_render_target_runs_render_then_test(tmp_path, mocker, _tofu_on_path):
+    config_path = _write_config(tmp_path, _TEST_RENDER_CONFIG)
+    (tmp_path / "model.yaml").write_text("nxos: {}\n")
+    run_streaming_mock = mocker.patch(
+        "nac.cli.test.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "test"])
+
+    assert result.exit_code == 0, result.output
+    assert run_streaming_mock.call_count == 2
+    render_call, test_call = run_streaming_mock.call_args_list
+    assert render_call.args[0] == [
+        "/usr/bin/tofu",
+        "apply",
+        "-target=module.example",
+        "-auto-approve",
+    ]
+    assert render_call.kwargs.get("quiet") is True
+    test_argv = test_call.args[0]
+    assert "nac-test" in test_argv
+    assert test_argv[test_argv.index("-d") + 1] == "model.yaml"
+    assert "✓ Render: OK (module.example -> model.yaml)" in result.output
+
+
+@pytest.mark.unit
+def test_test_no_render_skips_render_step(tmp_path, mocker, _tofu_on_path):
+    config_path = _write_config(tmp_path, _TEST_RENDER_CONFIG)
+    (tmp_path / "model.yaml").write_text("nxos: {}\n")
+    run_streaming_mock = mocker.patch(
+        "nac.cli.test.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "test", "--no-render"])
+
+    assert result.exit_code == 0, result.output
+    assert run_streaming_mock.call_count == 1
+    test_argv = run_streaming_mock.call_args.args[0]
+    assert "nac-test" in test_argv
+    assert "model.yaml" in test_argv
+    assert "--no-render" not in test_argv
+    assert "Render Summary" not in result.output
+
+
+@pytest.mark.unit
+def test_test_no_render_fails_cleanly_when_render_output_missing(
+    tmp_path, mocker, _tofu_on_path
+):
+    config_path = _write_config(tmp_path, _TEST_RENDER_CONFIG)
+    run_streaming_mock = mocker.patch("nac.cli.test.runner.run_streaming")
+
+    result = cli.invoke(app, ["--config", str(config_path), "test", "--no-render"])
+
+    assert result.exit_code == 1
+    assert "`render.output` `model.yaml` does not exist" in result.output
+    assert "without `--no-render`" in result.output
+    run_streaming_mock.assert_not_called()
+
+
+@pytest.mark.unit
+def test_test_no_render_with_artifacts_does_not_append(tmp_path, mocker, _tofu_on_path):
+    config_path = _write_config(tmp_path, _TEST_RENDER_CONFIG)
+    (tmp_path / "model.yaml").write_text("nxos: {}\n")
+    run_streaming_mock = mocker.patch(
+        "nac.cli.test.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(
+        app, ["--config", str(config_path), "test", "--no-render", "--artifacts"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert run_streaming_mock.call_count == 1
+    call = run_streaming_mock.call_args
+    assert call.kwargs["log_path"] == tmp_path / "test.txt"
+    assert not call.kwargs.get("append")
+
+
+@pytest.mark.unit
+def test_test_render_without_engine_hints_no_render(tmp_path, mocker):
+    config_path = _write_config(tmp_path, _TEST_RENDER_CONFIG)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
+    mocker.patch(
+        "nac.terraform.resolve_engine_binary",
+        side_effect=NoEngineAvailableError("Neither tofu nor terraform found."),
+    )
+    run_streaming_mock = mocker.patch("nac.cli.test.runner.run_streaming")
+
+    result = cli.invoke(app, ["--config", str(config_path), "test"])
+
+    assert result.exit_code == 1
+    assert "Neither tofu nor terraform found." in result.output
+    assert "use `nac test --no-render`" in result.output
+    run_streaming_mock.assert_not_called()
+
+
+@pytest.mark.unit
+def test_validate_render_without_engine_has_no_no_render_hint(tmp_path, mocker):
+    config_path = _write_config(tmp_path, _TEST_RENDER_CONFIG)
+    mocker.patch("shutil.which", side_effect=_which({"uv": "/usr/bin/uv"}))
+    mocker.patch(
+        "nac.terraform.resolve_engine_binary",
+        side_effect=NoEngineAvailableError("Neither tofu nor terraform found."),
+    )
+    mocker.patch("nac.cli.validate.runner.run_streaming")
+
+    result = cli.invoke(app, ["--config", str(config_path), "validate"])
+
+    assert result.exit_code == 1
+    assert "Neither tofu nor terraform found." in result.output
+    assert "--no-render" not in result.output
+
+
+@pytest.mark.unit
+def test_test_with_render_output_but_no_target_skips_render_step(tmp_path, mocker):
+    config_path = _write_config(tmp_path, "render:\n  output: model.yaml\n")
+    run_streaming_mock = mocker.patch(
+        "nac.cli.test.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "test"])
+
+    assert result.exit_code == 0, result.output
+    assert run_streaming_mock.call_count == 1
+    assert "model.yaml" in run_streaming_mock.call_args.args[0]
+
+
+@pytest.mark.unit
+def test_test_aborts_when_render_step_fails(tmp_path, mocker, _tofu_on_path):
+    config_path = _write_config(tmp_path, _TEST_RENDER_CONFIG)
+    run_streaming_mock = mocker.patch(
+        "nac.cli.test.runner.run_streaming", return_value=3
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "test"])
+
+    assert result.exit_code == 3
+    assert run_streaming_mock.call_count == 1  # nac-test never runs
+
+
+@pytest.mark.unit
+def test_test_fails_when_render_step_does_not_write_output(
+    tmp_path, mocker, _tofu_on_path
+):
+    config_path = _write_config(tmp_path, _TEST_RENDER_CONFIG)
+    run_streaming_mock = mocker.patch(
+        "nac.cli.test.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "test"])
+
+    assert result.exit_code == 1
+    assert run_streaming_mock.call_count == 1  # nac-test never runs
+    assert "Render step `module.example` did not write `model.yaml`" in result.output
+
+
+@pytest.mark.unit
+def test_test_with_artifacts_and_render_appends_second_call(
+    tmp_path, mocker, _tofu_on_path
+):
+    config_path = _write_config(tmp_path, _TEST_RENDER_CONFIG)
+    (tmp_path / "model.yaml").write_text("nxos: {}\n")
+    run_streaming_mock = mocker.patch(
+        "nac.cli.test.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "test", "--artifacts"])
+
+    assert result.exit_code == 0, result.output
+    render_call, test_call = run_streaming_mock.call_args_list
+    assert render_call.kwargs["log_path"] == tmp_path / "test.txt"
+    assert not render_call.kwargs.get("append")
+    assert test_call.kwargs["log_path"] == tmp_path / "test.txt"
+    assert test_call.kwargs["append"] is True
+
+
+@pytest.mark.unit
+def test_test_uses_render_target_from_module_manifest(
+    tmp_path, mocker, monkeypatch, _tofu_on_path, write_module
+):
+    monkeypatch.setenv("NXOS_USERNAME", "admin")
+    write_module(tmp_path, manifest=_CONFIG_MANIFEST, key="fabric")
+    config_path = _write_config(tmp_path, "")
+    (tmp_path / "model.yaml").write_text("nxos: {}\n")
+    run_streaming_mock = mocker.patch(
+        "nac.cli.test.runner.run_streaming", return_value=0
+    )
+
+    result = cli.invoke(app, ["--config", str(config_path), "test"])
+
+    assert result.exit_code == 0, result.output
+    render_argv = run_streaming_mock.call_args_list[0].args[0]
+    assert "-target=module.fabric.local_sensitive_file.model" in render_argv
 
 
 # ---------------------------------------------------------------------------

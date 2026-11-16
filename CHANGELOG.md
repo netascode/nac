@@ -1,3 +1,7 @@
+## Unreleased
+
+- Run the render step (`render.target`) also in `nac test` before `nac-test`, like `nac validate` does, so tests no longer use a missing or stale `render.output` (e.g. `model.yaml` in a fresh CI checkout or after the data model was changed); the targeted apply leaves an up-to-date file unchanged. Use `nac test --no-render` to test against an existing `render.output`, e.g. one passed on from an earlier CI job
+
 ## 0.2.2
 
 - Don't print the output of the `show` calls that `nac plan --artifacts` uses to write `plan.txt` and `plan.json`, so the plan is no longer printed twice followed by the whole JSON; their output is still shown if they fail

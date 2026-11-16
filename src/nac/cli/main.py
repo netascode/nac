@@ -100,16 +100,18 @@ def require_env(cfg: NacConfig) -> None:
         fail("Missing required environment variable(s): " + ", ".join(missing))
 
 
-def resolve_engine_or_exit(cfg: NacConfig) -> tuple[str, str]:
+def resolve_engine_or_exit(cfg: NacConfig, hint: str | None = None) -> tuple[str, str]:
     """Resolve the terraform/tofu binary, failing cleanly on any error.
 
-    Used by init/validate/plan/apply, none of which perform the
+    Used by init/validate/plan/apply/test, none of which perform the
     interactive FR-12 bootstrap prompt -- that is `nac setup`'s job.
+    `hint` is printed after the error message, e.g. to name a flag that
+    avoids needing an engine at all.
     """
     try:
         return terraform.resolve_engine_binary(cfg.tools.terraform)
     except (EngineNotFoundError, NoEngineAvailableError) as exc:
-        fail(str(exc))
+        fail(str(exc) if hint is None else f"{exc}\n{hint}")
 
 
 def get_no_color(ctx: typer.Context) -> bool:
