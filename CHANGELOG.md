@@ -1,4 +1,4 @@
-## Unreleased
+## 0.2.3
 
 - Run the render step (`render.target`) also in `nac test` before `nac-test`, like `nac validate` does, so tests no longer use a missing or stale `render.output` (e.g. `model.yaml` in a fresh CI checkout or after the data model was changed); the targeted apply leaves an up-to-date file unchanged. Use `nac test --no-render` to test against an existing `render.output`, e.g. one passed on from an earlier CI job
 
